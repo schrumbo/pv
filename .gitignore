@@ -1,0 +1,16 @@
+build/
+.gradle/
+.stonecutter/
+bin/
+out/
+run/
+
+*.class
+*.iml
+
+.idea/
+.vscode/
+
+# local secrets — Hypixel dev key never enters VCS
+*.local.properties
+pv-secrets.properties

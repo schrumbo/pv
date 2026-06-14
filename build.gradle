@@ -1,0 +1,81 @@
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+	id 'org.jetbrains.kotlin.jvm' version "${kotlin_version}"
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+	archivesName = project.archives_base_name
+}
+
+repositories {
+	mavenCentral()
+	maven { url = "https://maven.fabricmc.net/" }
+}
+
+loom {
+	splitEnvironmentSourceSets()
+
+	mods {
+		"pv" {
+			sourceSet sourceSets.main
+			sourceSet sourceSets.client
+		}
+	}
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+	implementation "net.fabricmc:fabric-language-kotlin:${project.flk_version}"
+}
+
+processResources {
+	inputs.property "version", project.version
+
+	filesMatching("fabric.mod.json") {
+		expand "version": inputs.properties.version
+	}
+}
+
+def javaVersion = 25
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = javaVersion
+}
+
+kotlin {
+	jvmToolchain(javaVersion)
+}
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(javaVersion)
+	}
+	withSourcesJar()
+}
+
+jar {
+	from("LICENSE") {
+		rename { "${it}_${project.base.archivesName.get()}" }
+	}
+}
+
+def versionLabel = project.version_label
+def deployDir = "C:/Users/aydtm/AppData/Roaming/PandoraLauncher/instances/${versionLabel}/.minecraft/mods"
+
+task deploy {
+	dependsOn build
+	doLast {
+		def target = file(deployDir)
+		target.listFiles()?.findAll { it.name.startsWith('pv-') && it.name.endsWith('.jar') }?.each { it.delete() }
+		def modJar = file("build/libs").listFiles()?.findAll {
+			it.name.startsWith('pv-') && it.name.endsWith('.jar') && !it.name.contains('-sources') && !it.name.contains('-dev')
+		}?.first()
+		copy { from(modJar); into(target) }
+		println "Deployed ${modJar.name} -> ${target}"
+	}
+}
