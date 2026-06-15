@@ -9,4 +9,6 @@ object Theme {
     const val TEXT = 0xFFE6E6E6.toInt()
     const val TEXT_MUTED = 0xFF8A8F98.toInt()
     const val ACCENT = 0xFF4DA3FF.toInt()
+    const val WARN = 0xFFE0654F.toInt()
+    const val GREEN = 0xFF5BD16A.toInt()
 }

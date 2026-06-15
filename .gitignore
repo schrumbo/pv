@@ -14,3 +14,6 @@ run/
 # local secrets — Hypixel dev key never enters VCS
 *.local.properties
 pv-secrets.properties
+
+# working scratchpad — resume checkpoint, not part of the repo
+left-off.md
