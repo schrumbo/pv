@@ -57,8 +57,13 @@ data class SkyblockProfile(
     val gameMode: String?,
     val skyblockLevel: Leveling.Level,
     val catacombs: Leveling.Level,
+    val dungeons: DungeonData,
     val skills: List<SkillEntry>,
     val skillAverage: Double,
     val slayers: List<SlayerEntry>,
     val armor: List<ItemStack>,
+    val bank: Long,
+    val purse: Long,
+    val firstJoin: Long,
+    val fairySouls: Int,
 )

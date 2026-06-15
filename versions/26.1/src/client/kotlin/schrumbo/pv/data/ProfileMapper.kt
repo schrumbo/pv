@@ -21,21 +21,46 @@ object ProfileMapper {
     private fun mapOne(profile: JsonObject, uuid: String): SkyblockProfile? {
         val member = profile.obj("members")?.obj(uuid) ?: return null
         val skills = skills(member)
+        val dungeons = dungeons(member)
         return SkyblockProfile(
             cuteName = profile.str("cute_name") ?: "?",
             gameMode = profile.str("game_mode"),
             skyblockLevel = skyblockLevel(member),
-            catacombs = catacombs(member),
+            catacombs = dungeons.catacombs,
+            dungeons = dungeons,
             skills = skills,
             skillAverage = average(skills),
             slayers = slayers(member),
             armor = armor(member),
+            bank = profile.obj("banking")?.num("balance")?.toLong() ?: 0L,
+            purse = (member.obj("currencies")?.num("coin_purse") ?: member.num("coin_purse"))?.toLong() ?: 0L,
+            firstJoin = member.obj("profile")?.num("first_join")?.toLong() ?: 0L,
+            fairySouls = (member.obj("fairy_soul")?.num("total_collected") ?: member.num("fairy_souls_collected"))?.toInt() ?: 0,
         )
     }
 
-    private fun catacombs(member: JsonObject): Leveling.Level {
-        val xp = member.obj("dungeons")?.obj("dungeon_types")?.obj("catacombs")?.num("experience")?.toLong() ?: 0L
-        return Leveling.skill(xp, Leveling.CATACOMBS_XP, overflow = false)
+    private fun dungeons(member: JsonObject): DungeonData {
+        val dj = member.obj("dungeons")
+        val types = dj?.obj("dungeon_types")
+        val cata = types?.obj("catacombs")
+        val master = types?.obj("master_catacombs")
+        val catacombs = Leveling.skill(cata?.num("experience")?.toLong() ?: 0L, Leveling.CATACOMBS_XP, overflow = false)
+
+        val classesJson = dj?.obj("player_classes")
+        val classes = listOf(
+            "healer" to "Healer", "mage" to "Mage", "berserk" to "Berserk", "archer" to "Archer", "tank" to "Tank",
+        ).map { (key, display) ->
+            val xp = classesJson?.obj(key)?.num("experience")?.toLong() ?: 0L
+            DungeonClass(display, Leveling.skill(xp, Leveling.CATACOMBS_XP, overflow = false))
+        }
+        val classAverage = if (classes.isEmpty()) 0.0 else classes.sumOf { it.level.fractional } / classes.size
+
+        val normalTiers = cata?.obj("tier_completions")
+        val masterTiers = master?.obj("tier_completions")
+        val floors = (0..7).map { f ->
+            FloorStat(f, normalTiers?.num(f.toString())?.toLong() ?: 0L, masterTiers?.num(f.toString())?.toLong() ?: 0L)
+        }
+        return DungeonData(catacombs, classes, classAverage, dj?.str("selected_dungeon_class"), floors)
     }
 
     private fun armor(member: JsonObject): List<ItemStack> {

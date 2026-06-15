@@ -16,6 +16,7 @@ import schrumbo.pv.ui.SkillTab
 import schrumbo.pv.ui.Theme
 import schrumbo.pv.ui.component.ClickRegistry
 import schrumbo.pv.ui.component.Hover
+import schrumbo.pv.ui.page.DungeonsPage
 import schrumbo.pv.ui.page.GeneralPage
 import schrumbo.pv.ui.page.Placeholder
 
@@ -27,6 +28,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
 
     private var page = Page.GENERAL
     private var skillTab = SkillTab.MINING
+    private var dungeonMaster = false
 
     private var input = ""
     private var inputFocused = false
@@ -177,6 +179,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
             is ProfileState.Loaded -> when (page) {
                 Page.GENERAL -> renderGeneral(ctx, s, x, y, width, height, mouseX, mouseY)
                 Page.SKILLS -> renderSkills(ctx, x, y, width, height, mouseX, mouseY)
+                Page.DUNGEONS -> renderDungeons(ctx, s, x, y, width, height, mouseX, mouseY)
                 else -> placeholder(ctx, page.title, x, y, width, height)
             }
         }
@@ -197,8 +200,24 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
 
         val mainW = width - GeneralPage.SIDE_WIDTH - GeneralPage.GAP
         val main = GeneralPage.main(s, index, mainW, onSkill, onCatacombs)
-        val scale = if (main.height > height) height.toFloat() / main.height else 1f
+        renderScaled(ctx, main, x, y, height, mouseX, mouseY)
+    }
 
+    private fun renderDungeons(
+        ctx: GuiGraphicsExtractor, s: ProfileState.Loaded,
+        x: Int, y: Int, width: Int, height: Int, mouseX: Int, mouseY: Int,
+    ) {
+        val index = profileIndex.coerceIn(0, s.profiles.size - 1)
+        val content = DungeonsPage.build(s.profiles[index], width, dungeonMaster) { dungeonMaster = it }
+        renderScaled(ctx, content, x, y, height, mouseX, mouseY)
+    }
+
+    /** Renders a click-aware page [content] at ([x],[y]), scaling it down uniformly if it overflows [height]. */
+    private fun renderScaled(
+        ctx: GuiGraphicsExtractor, content: schrumbo.pv.ui.component.Component,
+        x: Int, y: Int, height: Int, mouseX: Int, mouseY: Int,
+    ) {
+        val scale = if (content.height > height) height.toFloat() / content.height else 1f
         mainTfX = x
         mainTfY = y
         mainScale = scale
@@ -208,7 +227,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         if (scale < 1f) ctx.pose().scale(scale, scale)
         val lmx = ((mouseX - x) / scale).toInt()
         val lmy = ((mouseY - y) / scale).toInt()
-        main.render(ctx, 0, 0, lmx, lmy)
+        content.render(ctx, 0, 0, lmx, lmy)
         ctx.pose().popMatrix()
     }
 
@@ -304,11 +323,10 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
                 if (hit(rect, mx, my)) { skillTab = tab; return true }
             }
         }
-        if (page == Page.GENERAL) {
-            val lmx = ((mx - mainTfX) / mainScale).toInt()
-            val lmy = ((my - mainTfY) / mainScale).toInt()
-            if (ClickRegistry.fire(lmx, lmy)) return true
-        }
+        // Component pages (General, Dungeons) record click regions in the scaled content space.
+        val lmx = ((mx - mainTfX) / mainScale).toInt()
+        val lmy = ((my - mainTfY) / mainScale).toInt()
+        if (ClickRegistry.fire(lmx, lmy)) return true
         return super.mouseClicked(event, doubleClick)
     }
 

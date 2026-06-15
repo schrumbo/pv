@@ -1,5 +1,6 @@
 package schrumbo.pv.ui.page
 
+import net.minecraft.client.Minecraft
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.resources.Identifier
 import net.minecraft.world.entity.LivingEntity
@@ -12,6 +13,7 @@ import schrumbo.pv.data.SlayerEntry
 import schrumbo.pv.ui.SkillTab
 import schrumbo.pv.ui.Theme
 import schrumbo.pv.ui.component.Box
+import schrumbo.pv.ui.component.Card
 import schrumbo.pv.ui.component.Clickable
 import schrumbo.pv.ui.component.Column
 import schrumbo.pv.ui.component.Component
@@ -35,7 +37,6 @@ object GeneralPage {
     const val GAP = 12
     private const val COL_GAP = 16
     private const val XP_WIDTH = 36
-    private const val CARD_PAD = 4
 
     /**
      * Left column: compact stats. [onSkill] deep-links a skill into its Skills sub-page;
@@ -50,29 +51,58 @@ object GeneralPage {
     ): Component {
         val p = state.profiles[index]
         return Column(
-            SpaceBetween(
-                width,
-                Text("Hypixel Lvl ${state.hypixelLevel ?: "?"}", Theme.TEXT_MUTED),
-                Text(p.gameMode?.replaceFirstChar { it.uppercase() } ?: "Classic", Theme.TEXT_MUTED),
-            ),
             skyblockLevel(p, width),
             catacombs(p, width, onCatacombs),
             section("SKILLS", "SA %.2f".format(p.skillAverage), width, skills(p, width, onSkill)),
             section("SLAYERS", null, width, slayers(p, width)),
-            guild(state, width),
             spacing = 8,
         )
     }
 
-    /** Right column: player render with floating nametag + status line. */
+    /** Right column: player render on top, profile info board below — both share surface + border. */
     fun side(state: ProfileState.Loaded, index: Int, height: Int, entity: LivingEntity?): Component {
-        val playerHeight = height.coerceIn(120, 260)
+        val p = state.profiles[index]
+        val info = infoPanel(state, p)
+        val playerH = (height - info.height - 6).coerceIn(90, 240)
         val status = if (state.online) "§a online §8· §b${state.location ?: "Skyblock"}" else "§7offline"
-        return if (entity != null) {
-            PlayerRender(SIDE_WIDTH, playerHeight, entity, state.nametag, status, Theme.SURFACE_ALT, Theme.BORDER)
+        val player = if (entity != null) {
+            PlayerRender(SIDE_WIDTH, playerH, entity, state.nametag, status, Theme.SURFACE_ALT, Theme.BORDER)
         } else {
-            Frame(SIDE_WIDTH, playerHeight, Text("no render", Theme.TEXT_MUTED), Theme.SURFACE_ALT, Theme.BORDER)
+            Frame(SIDE_WIDTH, playerH, Text("no render", Theme.TEXT_MUTED), Theme.SURFACE_ALT, Theme.BORDER)
         }
+        return Column(player, info, spacing = 6)
+    }
+
+    /** Identity + economy board pinned under the player render. */
+    private fun infoPanel(state: ProfileState.Loaded, p: SkyblockProfile): Component {
+        val w = SIDE_WIDTH - 12
+        val content = Column(
+            Text("PROFILE", Theme.TEXT_MUTED),
+            Box(w, 1, Theme.BORDER),
+            Spacer(0, 1),
+            infoRow(w, "Mode", p.gameMode?.replaceFirstChar { it.uppercase() } ?: "Classic", Theme.TEXT),
+            infoRow(w, "Hypixel", state.hypixelLevel?.toString() ?: "?", Theme.TEXT),
+            infoRow(w, "Guild", state.guild ?: "—", Theme.TEXT),
+            infoRow(w, "Bank", Format.compact(p.bank), Theme.GREEN),
+            infoRow(w, "Purse", Format.compact(p.purse), Theme.GREEN),
+            infoRow(w, "Created", Format.date(p.firstJoin), Theme.TEXT),
+            infoRow(w, "Fairy Souls", p.fairySouls.toString(), Theme.TEXT),
+            spacing = 2,
+        )
+        return Card(content, padding = 6, background = Theme.SURFACE_ALT, borderColor = Theme.BORDER)
+    }
+
+    private fun infoRow(w: Int, key: String, value: String, valueColor: Int): Component {
+        val font = Minecraft.getInstance().font
+        val valMax = w - font.width(key) - 6
+        return SpaceBetween(w, Text(key, Theme.TEXT_MUTED), Text(clip(value, valMax, font), valueColor))
+    }
+
+    private fun clip(s: String, maxW: Int, font: net.minecraft.client.gui.Font): String {
+        if (font.width(s) <= maxW) return s
+        var t = s
+        while (t.isNotEmpty() && font.width("$t…") > maxW) t = t.dropLast(1)
+        return "$t…"
     }
 
     private fun skyblockLevel(p: SkyblockProfile, width: Int): Component {
@@ -93,25 +123,25 @@ object GeneralPage {
         )
     }
 
-    /** Catacombs slot — a bordered, clickable card that opens the Dungeons page. */
+    /** Catacombs slot — flat like the Skyblock level block, clickable to open the Dungeons page. */
     private fun catacombs(p: SkyblockProfile, width: Int, onClick: () -> Unit): Component {
         val c = p.catacombs
-        val innerW = width - CARD_PAD * 2
         val inner = Column(
             SpaceBetween(
-                innerW,
+                width,
                 Row(
+                    Item(icon("dead_bush"), 11, tooltip = false),
                     Text("Catacombs", Theme.TEXT_MUTED),
                     Text(c.level.toString(), Theme.GREEN),
-                    spacing = 5,
+                    spacing = 4,
                     align = VAlign.CENTER,
                 ),
                 Text("Dungeons →", Theme.TEXT_MUTED),
             ),
-            bar(c.progress, c.totalXp, innerW, fg = Theme.GREEN),
+            bar(c.progress, c.totalXp, width, fg = Theme.GREEN),
             spacing = 2,
         )
-        return Clickable(card(inner, width), hoverBorder = Theme.ACCENT, onClick = onClick)
+        return Clickable(inner, hoverRail = Theme.ACCENT, pad = 2, onClick = onClick)
     }
 
     private fun skills(p: SkyblockProfile, width: Int, onSkill: (SkillType) -> Unit): Component {
@@ -134,7 +164,7 @@ object GeneralPage {
         )
         val withTooltip = Tooltip(cell, skillTooltip(e, levelText, maxed))
         return if (SkillTab.forSkill(e.type) != null) {
-            Clickable(withTooltip, hoverBorder = Theme.ACCENT) { onSkill(e.type) }
+            Clickable(withTooltip, hoverRail = Theme.ACCENT, pad = 2) { onSkill(e.type) }
         } else {
             withTooltip
         }
@@ -185,12 +215,6 @@ object GeneralPage {
         align = VAlign.CENTER,
     )
 
-    private fun guild(state: ProfileState.Loaded, width: Int): Component = SpaceBetween(
-        width,
-        Text("GUILD", Theme.TEXT_MUTED),
-        Text(state.guild ?: "—", Theme.TEXT),
-    )
-
     private fun twoColumns(rows: List<Component>): Component {
         val half = (rows.size + 1) / 2
         return Row(
@@ -206,11 +230,6 @@ object GeneralPage {
         Spacer(0, 1),
         content,
         spacing = 3,
-    )
-
-    private fun card(inner: Component, width: Int): Component = Frame(
-        width, inner.height + CARD_PAD * 2, inner,
-        background = Theme.SURFACE_ALT, borderColor = Theme.BORDER,
     )
 
     private fun icon(name: String): ItemStack {

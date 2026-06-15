@@ -26,20 +26,28 @@ object ClickRegistry {
     }
 }
 
-/** Wraps a [child], registers its rect for click handling, and outlines it with [hoverBorder] on hover. */
+/**
+ * Wraps a [child] and registers its rect for click handling. On hover it draws a 2px [hoverRail]
+ * down the left edge — never over the content, so scaled PiP item icons stay visible (a full
+ * background fill composites above PiP items and would hide them). [pad] grows the hit/hover area.
+ */
 class Clickable(
     private val child: Component,
-    private val hoverBorder: Int? = null,
+    private val hoverRail: Int? = null,
+    private val pad: Int = 0,
     private val onClick: () -> Unit,
 ) : Component() {
     override val width get() = child.width
     override val height get() = child.height
 
     override fun render(ctx: GuiGraphicsExtractor, x: Int, y: Int, mouseX: Int, mouseY: Int) {
+        val rx = x - pad
+        val ry = y - pad
+        val rw = width + pad * 2
+        val rh = height + pad * 2
+        val hovered = mouseX in rx until rx + rw && mouseY in ry until ry + rh
         child.render(ctx, x, y, mouseX, mouseY)
-        ClickRegistry.regions += ClickRegistry.Region(x, y, width, height, onClick)
-        if (hoverBorder != null && mouseX in x until x + width && mouseY in y until y + height) {
-            ctx.border(x, y, width, height, hoverBorder)
-        }
+        if (hovered && hoverRail != null) ctx.fill(rx, ry, rx + 2, ry + rh, hoverRail)
+        ClickRegistry.regions += ClickRegistry.Region(rx, ry, rw, rh, onClick)
     }
 }
