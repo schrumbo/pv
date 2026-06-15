@@ -11,4 +11,10 @@ object Theme {
     const val ACCENT = 0xFF4DA3FF.toInt()
     const val WARN = 0xFFE0654F.toInt()
     const val GREEN = 0xFF5BD16A.toInt()
+    const val GOLD = 0xFFFFB534.toInt()
+    const val CATA = 0xFFE0533D.toInt()
+    const val CATA_TRACK = 0xFF3A221D.toInt()
+
+    /** Translucent white wash drawn behind a hovered clickable so its PiP icons stay on top. */
+    const val HOVER = 0x22FFFFFF
 }

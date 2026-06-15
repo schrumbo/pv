@@ -2,30 +2,34 @@ package schrumbo.pv.ui
 
 import schrumbo.pv.data.SkillType
 
-/** Top-level pages, in tab order. Only [GENERAL] is populated for now; the rest are placeholders. */
-enum class Page(val title: String) {
-    GENERAL("General"),
-    SKILLS("Skills"),
-    INVENTORY("Inventory"),
-    PETS("Pets"),
-    DUNGEONS("Dungeons"),
-    COLLECTIONS("Collections"),
-    BESTIARY("Bestiary"),
-    RIFT("Rift"),
-    CRIMSON_ISLE("Crimson Isle"),
-    MISC("Misc"),
-}
-
-/** Sub-pages of the Skills page, each backed by a skill the General page can deep-link into. */
-enum class SkillTab(val title: String, val skill: SkillType) {
-    MINING("Mining", SkillType.MINING),
-    FORAGING("Foraging", SkillType.FORAGING),
-    FARMING("Farming", SkillType.FARMING),
-    FISHING("Fishing", SkillType.FISHING),
-    ENCHANTING("Enchanting", SkillType.ENCHANTING),
-    HUNTING("Hunting", SkillType.HUNTING);
+/**
+ * Top-level pages, in tab order, each shown as an item icon in the tab bar. Only [GENERAL],
+ * [BESTIARY], and [CATACOMBS] are populated for now; the rest are placeholders. Skills are their
+ * own categories (Enchanting deliberately has none — it stays only in the General skill grid).
+ */
+enum class Page(val title: String, val icon: String) {
+    GENERAL("General", "paper"),
+    BESTIARY("Bestiary", "zombie_head"),
+    MINING("Mining", "netherite_pickaxe"),
+    FORAGING("Foraging", "netherite_axe"),
+    FARMING("Farming", "diamond_hoe"),
+    FISHING("Fishing", "fishing_rod"),
+    HUNTING("Hunting", "lead"),
+    CATACOMBS("Catacombs", "dead_bush"),
+    INVENTORY("Inventory", "shulker_box"),
+    COLLECTIONS("Collections", "item_frame"),
+    PETS("Pets", "bone"),
+    RIFT("Rift", "ender_eye");
 
     companion object {
-        fun forSkill(skill: SkillType): SkillTab? = entries.firstOrNull { it.skill == skill }
+        /** The dedicated page for a skill, or null for skills that don't get their own category. */
+        fun forSkill(skill: SkillType): Page? = when (skill) {
+            SkillType.MINING -> MINING
+            SkillType.FORAGING -> FORAGING
+            SkillType.FARMING -> FARMING
+            SkillType.FISHING -> FISHING
+            SkillType.HUNTING -> HUNTING
+            else -> null
+        }
     }
 }

@@ -10,7 +10,7 @@ import schrumbo.pv.data.SkillEntry
 import schrumbo.pv.data.SkillType
 import schrumbo.pv.data.SkyblockProfile
 import schrumbo.pv.data.SlayerEntry
-import schrumbo.pv.ui.SkillTab
+import schrumbo.pv.ui.Page
 import schrumbo.pv.ui.Theme
 import schrumbo.pv.ui.component.Box
 import schrumbo.pv.ui.component.Card
@@ -18,6 +18,7 @@ import schrumbo.pv.ui.component.Clickable
 import schrumbo.pv.ui.component.Column
 import schrumbo.pv.ui.component.Component
 import schrumbo.pv.ui.component.Frame
+import schrumbo.pv.ui.component.HAlign
 import schrumbo.pv.ui.component.Item
 import schrumbo.pv.ui.component.PlayerRender
 import schrumbo.pv.ui.component.ProgressBar
@@ -36,7 +37,8 @@ object GeneralPage {
     const val SIDE_WIDTH = 150
     const val GAP = 12
     private const val COL_GAP = 16
-    private const val XP_WIDTH = 36
+    private const val XP_WIDTH = 40
+    private const val XP_GAP = 5
 
     /**
      * Left column: compact stats. [onSkill] deep-links a skill into its Skills sub-page;
@@ -46,17 +48,32 @@ object GeneralPage {
         state: ProfileState.Loaded,
         index: Int,
         width: Int,
+        height: Int,
         onSkill: (SkillType) -> Unit,
         onCatacombs: () -> Unit,
     ): Component {
         val p = state.profiles[index]
-        return Column(
+        val blocks = listOf(
             skyblockLevel(p, width),
             catacombs(p, width, onCatacombs),
             section("SKILLS", "SA %.2f".format(p.skillAverage), width, skills(p, width, onSkill)),
             section("SLAYERS", null, width, slayers(p, width)),
-            spacing = 8,
         )
+        return fillHeight(blocks, base = 8, target = height)
+    }
+
+    /** Stacks [blocks] and, when shorter than [target], spreads the slack evenly across the gaps. */
+    private fun fillHeight(blocks: List<Component>, base: Int, target: Int): Component {
+        val natural = blocks.sumOf { it.height } + base * (blocks.size - 1).coerceAtLeast(0)
+        if (blocks.size < 2 || target <= natural) return Column(blocks, spacing = base)
+        val gaps = blocks.size - 1
+        val slack = target - natural
+        val children = mutableListOf<Component>()
+        blocks.forEachIndexed { i, b ->
+            children += b
+            if (i < gaps) children += Spacer(0, base + slack / gaps + if (i < slack % gaps) 1 else 0)
+        }
+        return Column(children, spacing = 0)
     }
 
     /** Right column: player render on top, profile info board below — both share surface + border. */
@@ -83,8 +100,8 @@ object GeneralPage {
             infoRow(w, "Mode", p.gameMode?.replaceFirstChar { it.uppercase() } ?: "Classic", Theme.TEXT),
             infoRow(w, "Hypixel", state.hypixelLevel?.toString() ?: "?", Theme.TEXT),
             infoRow(w, "Guild", state.guild ?: "—", Theme.TEXT),
-            infoRow(w, "Bank", Format.compact(p.bank), Theme.GREEN),
-            infoRow(w, "Purse", Format.compact(p.purse), Theme.GREEN),
+            infoRow(w, "Bank", Format.compact(p.bank), Theme.GOLD),
+            infoRow(w, "Purse", Format.compact(p.purse), Theme.GOLD),
             infoRow(w, "Created", Format.date(p.firstJoin), Theme.TEXT),
             infoRow(w, "Fairy Souls", p.fairySouls.toString(), Theme.TEXT),
             spacing = 2,
@@ -127,21 +144,17 @@ object GeneralPage {
     private fun catacombs(p: SkyblockProfile, width: Int, onClick: () -> Unit): Component {
         val c = p.catacombs
         val inner = Column(
-            SpaceBetween(
-                width,
-                Row(
-                    Item(icon("dead_bush"), 11, tooltip = false),
-                    Text("Catacombs", Theme.TEXT_MUTED),
-                    Text(c.level.toString(), Theme.GREEN),
-                    spacing = 4,
-                    align = VAlign.CENTER,
-                ),
-                Text("Dungeons →", Theme.TEXT_MUTED),
+            Row(
+                Item(icon("dead_bush"), 11, tooltip = false),
+                Text("Catacombs", Theme.TEXT_MUTED),
+                Text(c.level.toString(), Theme.CATA),
+                spacing = 4,
+                align = VAlign.CENTER,
             ),
-            bar(c.progress, c.totalXp, width, fg = Theme.GREEN),
+            bar(c.progress, c.totalXp, width, fg = Theme.CATA, bg = Theme.CATA_TRACK),
             spacing = 2,
         )
-        return Clickable(inner, hoverRail = Theme.ACCENT, pad = 2, onClick = onClick)
+        return Clickable(inner, hoverFill = Theme.HOVER, pad = 2, onClick = onClick)
     }
 
     private fun skills(p: SkyblockProfile, width: Int, onSkill: (SkillType) -> Unit): Component {
@@ -154,17 +167,19 @@ object GeneralPage {
         val maxed = xpLevel >= e.type.cap
         val levelText = "$xpLevel"
         val cell = Column(
-            SpaceBetween(
-                cellW,
-                Row(Item(icon(e.type.icon), 11, tooltip = false), Text(e.type.display, Theme.TEXT), spacing = 3, align = VAlign.CENTER),
+            Row(
+                Item(icon(e.type.icon), 11, tooltip = false),
+                Text(e.type.display, Theme.TEXT),
                 Text(levelText, if (maxed) Theme.ACCENT else Theme.TEXT_MUTED),
+                spacing = 4,
+                align = VAlign.CENTER,
             ),
             bar(e.level.progress, e.level.totalXp, cellW),
             spacing = 1,
         )
         val withTooltip = Tooltip(cell, skillTooltip(e, levelText, maxed))
-        return if (SkillTab.forSkill(e.type) != null) {
-            Clickable(withTooltip, hoverRail = Theme.ACCENT, pad = 2) { onSkill(e.type) }
+        return if (Page.forSkill(e.type) != null) {
+            Clickable(withTooltip, hoverFill = Theme.HOVER, pad = 2) { onSkill(e.type) }
         } else {
             withTooltip
         }
@@ -174,7 +189,7 @@ object GeneralPage {
         "§b${e.type.display} §7$levelText",
         "§7Total XP: §f${"%,d".format(e.level.totalXp)}",
         if (maxed) "§6Maxed" else "§7To next: §f${Format.compact(e.level.xpToNext)} §8(${(e.level.progress * 100).roundToInt()}%)",
-        SkillTab.forSkill(e.type)?.let { "§8Click to open ${e.type.display}" },
+        Page.forSkill(e.type)?.let { "§8Click to open ${e.type.display}" },
     )
 
     private fun slayers(p: SkyblockProfile, width: Int): Component {
@@ -184,10 +199,12 @@ object GeneralPage {
 
     private fun slayerCell(e: SlayerEntry, cellW: Int): Component {
         val cell = Column(
-            SpaceBetween(
-                cellW,
-                Row(Item(icon(e.type.icon), 11, tooltip = false), Text(e.type.display, Theme.TEXT), spacing = 3, align = VAlign.CENTER),
+            Row(
+                Item(icon(e.type.icon), 11, tooltip = false),
+                Text(e.type.display, Theme.TEXT),
                 Text(e.level.level.toString(), if (e.level.maxed) Theme.ACCENT else Theme.TEXT_MUTED),
+                spacing = 4,
+                align = VAlign.CENTER,
             ),
             bar(e.level.progress, e.level.totalXp, cellW),
             spacing = 1,
@@ -203,15 +220,17 @@ object GeneralPage {
         )
         e.tierKills.forEachIndexed { i, kills ->
             // T5 only exists for some bosses; hide it when there are no kills there.
-            if (i < 4 || kills > 0) lines += "§7Tier ${i + 1}: §f${"%,d".format(kills)} §8kills"
+            if (i < 4 || kills > 0) lines += "§7Tier ${i + 1}: §f${"%,d".format(kills)}"
         }
         return lines
     }
 
-    private fun bar(progress: Double, totalXp: Long, cellW: Int, fg: Int = Theme.ACCENT): Component = Row(
-        ProgressBar(cellW - XP_WIDTH, 3, progress, fg, Theme.SURFACE_ALT),
-        Text(Format.compact(totalXp), Theme.TEXT_MUTED),
-        spacing = 5,
+    /** Bar + a fixed-width, right-aligned XP slot so every cell is exactly [cellW] wide regardless of
+     *  the XP string length (keeps skill/slayer cells — and their hover areas — uniform). */
+    private fun bar(progress: Double, totalXp: Long, cellW: Int, fg: Int = Theme.ACCENT, bg: Int = Theme.SURFACE_ALT): Component = Row(
+        ProgressBar(cellW - XP_WIDTH - XP_GAP, 3, progress, fg, bg),
+        Frame(XP_WIDTH, Minecraft.getInstance().font.lineHeight, Text(Format.compact(totalXp), Theme.TEXT_MUTED), hAlign = HAlign.END),
+        spacing = XP_GAP,
         align = VAlign.CENTER,
     )
 

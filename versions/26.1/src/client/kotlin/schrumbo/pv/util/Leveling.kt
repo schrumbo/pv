@@ -54,12 +54,16 @@ object Leveling {
         val xpToNext: Long,
     )
 
+    /** Flat XP cost per Catacombs/class level past 50 (SoopyV2 dungeon overflow). */
+    const val DUNGEON_OVERFLOW_STEP = 200_000_000L
+
     /**
      * Resolves a skill level from [totalXp] using the full [table]. With [overflow], levels continue
-     * past the table end (level 60) using the SoopyV2 formula: each level beyond costs
-     * `7_000_000 + 600_000` to start, the step grows by `600_000` per level and doubles every 10.
+     * past the table end: when [overflowStep] is given each further level costs that flat amount
+     * (Catacombs/dungeon classes, 200M); otherwise the SoopyV2 skill formula is used — each level
+     * beyond starts at `table.last + 600_000`, the step grows by `600_000` and doubles every 10.
      */
-    fun skill(totalXp: Long, table: LongArray, overflow: Boolean = true): Level {
+    fun skill(totalXp: Long, table: LongArray, overflow: Boolean = true, overflowStep: Long? = null): Level {
         val cap = table.size
         var remaining = totalXp
         var level = 0
@@ -74,6 +78,14 @@ object Leveling {
             }
         }
         if (overflow) {
+            if (overflowStep != null) {
+                while (remaining > overflowStep) {
+                    level++
+                    remaining -= overflowStep
+                }
+                val frac = remaining.toDouble() / overflowStep
+                return Level(level, level + frac, totalXp, cap, true, frac, overflowStep - remaining)
+            }
             var slope = 600_000L
             var xpForNext = table.last() + slope
             while (remaining > xpForNext) {

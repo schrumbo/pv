@@ -5,30 +5,47 @@ import net.minecraft.client.gui.screens.Screen
 import net.minecraft.client.input.CharacterEvent
 import net.minecraft.client.input.KeyEvent
 import net.minecraft.client.input.MouseButtonEvent
+import net.minecraft.util.Util
+import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.network.chat.Component
+import net.minecraft.resources.Identifier
 import net.minecraft.world.entity.LivingEntity
+import net.minecraft.world.item.ItemStack
 import schrumbo.pv.api.ProfileService
 import schrumbo.pv.data.ProfileState
 import schrumbo.pv.data.SkillType
 import schrumbo.pv.render.FakePlayer
+import schrumbo.pv.render.ItemRenderUtils
 import schrumbo.pv.ui.Page
-import schrumbo.pv.ui.SkillTab
 import schrumbo.pv.ui.Theme
 import schrumbo.pv.ui.component.ClickRegistry
 import schrumbo.pv.ui.component.Hover
+import schrumbo.pv.ui.page.BestiaryPage
+import schrumbo.pv.ui.page.CollectionsPage
 import schrumbo.pv.ui.page.DungeonsPage
+import schrumbo.pv.ui.page.FarmingPage
+import schrumbo.pv.ui.page.FishingPage
+import schrumbo.pv.ui.page.ForagingPage
 import schrumbo.pv.ui.page.GeneralPage
+import schrumbo.pv.ui.page.HuntingPage
+import schrumbo.pv.ui.page.InventoryPage
+import schrumbo.pv.ui.page.MiningPage
+import schrumbo.pv.ui.page.PetsPage
 import schrumbo.pv.ui.page.Placeholder
+import schrumbo.pv.ui.page.RiftPage
 
-/** Root profile-viewer screen: floating search/profile controls, page tabs, and the pages. */
+/** Root profile-viewer screen: icon tab bar on top, the page, and a bottom bar with profile chips,
+ *  player search, and an "Open in SkyCrypt" button. */
 class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
 
     private var state: ProfileState = ProfileState.Loading
     private var profileIndex = 0
 
     private var page = Page.GENERAL
-    private var skillTab = SkillTab.MINING
     private var dungeonMaster = false
+    private var bestiaryIsland = 0
+    private var collectionCategory = 0
+    private var inventoryTab = 0
 
     private var input = ""
     private var inputFocused = false
@@ -37,12 +54,10 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
     private var cachedEntityIndex = -1
 
     private var inputRect = intArrayOf(0, 0, 0, 0)
-    private var dropdownOpen = false
-    private var dropHeaderRect = intArrayOf(0, 0, 0, 0)
-    private val dropEntryRects = mutableListOf<Pair<IntArray, Int>>()
+    private var skycryptRect = intArrayOf(0, 0, 0, 0)
+    private val profileChipRects = mutableListOf<Pair<IntArray, Int>>()
 
     private val tabRects = mutableListOf<Pair<IntArray, Page>>()
-    private val subnavRects = mutableListOf<Pair<IntArray, SkillTab>>()
 
     // Transform of the (possibly scaled) General main column, for click hit-testing.
     private var mainTfX = 0
@@ -79,107 +94,126 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         context.fill(px, py, px + panelW, py + panelH, Theme.SURFACE)
         border(context, px, py, panelW, panelH, Theme.BORDER)
 
-        val topH = 18
-        tabBar(context, px + 10, py + 5, mouseX, mouseY)
+        val topH = 22
+        val botH = 24
+        tabBar(context, px + 10, py + 3, mouseX, mouseY)
         context.fill(px, py + topH, px + panelW, py + topH + 1, Theme.BORDER)
+
+        val barTop = py + panelH - botH
+        context.fill(px, barTop, px + panelW, barTop + 1, Theme.BORDER)
+        bottomBar(context, px, barTop + 1, panelW, botH - 1, mouseX, mouseY)
 
         val pad = 12
         val contentX = px + pad
         val contentY = py + topH + 1 + pad
         val contentW = panelW - pad * 2
-        val contentH = (py + panelH - pad) - contentY
+        val contentH = (barTop - pad) - contentY
         renderContent(context, contentX, contentY, contentW, contentH, mouseX, mouseY)
-
-        // Floating controls render last so they sit above tabs and content.
-        floatingControls(context, px + panelW, py, topH)
-        if (dropdownOpen) dropdownOverlay(context, mouseX, mouseY)
     }
 
-    private fun floatingControls(ctx: GuiGraphicsExtractor, panelRight: Int, py: Int, topH: Int) {
-        val h = 14
-        val y = py + (topH - h) / 2
-
-        // Profile chip pinned to the far right; search to its left.
+    /** Bottom bar: floating profile chips on the left, player search + Open-in-SkyCrypt on the right. */
+    private fun bottomBar(ctx: GuiGraphicsExtractor, x: Int, y: Int, w: Int, h: Int, mouseX: Int, mouseY: Int) {
+        profileChipRects.clear()
+        val ch = 16
+        val cy = y + (h - ch) / 2
         val s = state
-        var chipLeft = panelRight - 8
-        if (s is ProfileState.Loaded && s.profiles.isNotEmpty()) {
-            val index = profileIndex.coerceIn(0, s.profiles.size - 1)
-            val label = s.profiles[index].cuteName + "  ▾"
-            val w = font.width(label) + 12
-            val x = panelRight - 8 - w
-            ctx.fill(x, y, x + w, y + h, Theme.SURFACE_ALT)
-            border(ctx, x, y, w, h, if (dropdownOpen) Theme.ACCENT else Theme.BORDER)
-            ctx.text(font, label, x + 6, y + 3, Theme.TEXT, true)
-            dropHeaderRect = intArrayOf(x, y, w, h)
-            chipLeft = x
+
+        // Open in SkyCrypt — far right, only when a profile is loaded.
+        val skyLabel = "Open in SkyCrypt"
+        val skyW = font.width(skyLabel) + 14
+        val skyX = x + w - 8 - skyW
+        if (s is ProfileState.Loaded && skyCryptUrl() != null) {
+            val hovered = hit(intArrayOf(skyX, cy, skyW, ch), mouseX, mouseY)
+            ctx.fill(skyX, cy, skyX + skyW, cy + ch, if (hovered) Theme.ACCENT else Theme.SURFACE_ALT)
+            border(ctx, skyX, cy, skyW, ch, Theme.ACCENT)
+            ctx.text(font, skyLabel, skyX + 7, cy + 4, if (hovered) Theme.SURFACE else Theme.ACCENT, false)
+            skycryptRect = intArrayOf(skyX, cy, skyW, ch)
         } else {
-            dropHeaderRect = intArrayOf(0, 0, 0, 0)
+            skycryptRect = intArrayOf(0, 0, 0, 0)
         }
 
+        // Player search — left of the SkyCrypt button.
         val sw = 150
-        val sx = chipLeft - 6 - sw
-        ctx.fill(sx, y, sx + sw, y + h, Theme.SURFACE)
-        border(ctx, sx, y, sw, h, if (inputFocused) Theme.ACCENT else Theme.BORDER)
+        val sx = skyX - 6 - sw
+        ctx.fill(sx, cy, sx + sw, cy + ch, Theme.SURFACE)
+        border(ctx, sx, cy, sw, ch, if (inputFocused) Theme.ACCENT else Theme.BORDER)
         val blink = inputFocused && (System.currentTimeMillis() / 500) % 2 == 0L
         val placeholder = input.isEmpty() && !inputFocused
         val shown = (if (placeholder) "search player…" else input) + if (blink) "_" else ""
-        ctx.text(font, shown, sx + 4, y + 3, if (placeholder) Theme.TEXT_MUTED else Theme.TEXT, false)
-        inputRect = intArrayOf(sx, y, sw, h)
+        ctx.text(font, shown, sx + 5, cy + 4, if (placeholder) Theme.TEXT_MUTED else Theme.TEXT, false)
+        inputRect = intArrayOf(sx, cy, sw, ch)
+
+        // Floating profile chips — fill from the left, stopping before the search box.
+        if (s !is ProfileState.Loaded) return
+        var chipX = x + 10
+        for ((i, profile) in s.profiles.withIndex()) {
+            val cw = font.width(profile.cuteName) + 14
+            if (chipX + cw > sx - 8) break
+            val active = i == profileIndex.coerceIn(0, s.profiles.size - 1)
+            val hovered = hit(intArrayOf(chipX, cy, cw, ch), mouseX, mouseY)
+            ctx.fill(chipX, cy, chipX + cw, cy + ch, Theme.SURFACE_ALT)
+            border(ctx, chipX, cy, cw, ch, if (active) Theme.ACCENT else Theme.BORDER)
+            val color = if (active) Theme.ACCENT else if (hovered) Theme.TEXT else Theme.TEXT_MUTED
+            ctx.text(font, profile.cuteName, chipX + 7, cy + 4, color, true)
+            profileChipRects += intArrayOf(chipX, cy, cw, ch) to i
+            chipX += cw + 6
+        }
     }
 
-    private fun tabBar(ctx: GuiGraphicsExtractor, startX: Int, tabY: Int, mouseX: Int, mouseY: Int) {
+    /** sky.shiiyu.moe URL for the current player + profile, or null when no name is resolved. */
+    private fun skyCryptUrl(): String? {
+        val s = state as? ProfileState.Loaded ?: return null
+        val name = s.gameProfile?.name ?: return null
+        val index = profileIndex.coerceIn(0, s.profiles.size - 1)
+        return "https://sky.shiiyu.moe/stats/$name/${s.profiles[index].cuteName}"
+    }
+
+    private fun tabBar(ctx: GuiGraphicsExtractor, startX: Int, iconY: Int, mouseX: Int, mouseY: Int) {
         tabRects.clear()
+        val size = 16
+        val gap = 7
         var x = startX
         for (p in Page.entries) {
-            val w = font.width(p.title)
+            val rect = intArrayOf(x, iconY, size, size)
             val active = p == page
-            val hovered = mouseX in x until x + w && mouseY in tabY - 2 until tabY + 11
-            val color = when {
-                active -> Theme.ACCENT
-                hovered -> Theme.TEXT
-                else -> Theme.TEXT_MUTED
+            val hovered = hit(rect, mouseX, mouseY)
+            ItemRenderUtils.renderItem(ctx, icon(p.icon), x, iconY, 1f)
+            when {
+                active -> ctx.fill(x, iconY + size, x + size, iconY + size + 1, Theme.ACCENT)
+                hovered -> ctx.fill(x, iconY + size, x + size, iconY + size + 1, Theme.BORDER)
             }
-            ctx.text(font, p.title, x, tabY, color, true)
-            if (active) ctx.fill(x, tabY + 11, x + w, tabY + 12, Theme.ACCENT)
-            tabRects += intArrayOf(x, tabY - 2, w, 14) to p
-            x += w + 10
+            if (hovered) {
+                ctx.setComponentTooltipForNextFrame(font, listOf(Component.literal(p.title)), Hover.screenX, Hover.screenY)
+            }
+            tabRects += rect to p
+            x += size + gap
         }
     }
 
-    private fun dropdownOverlay(ctx: GuiGraphicsExtractor, mouseX: Int, mouseY: Int) {
-        dropEntryRects.clear()
-        val s = state
-        if (s !is ProfileState.Loaded) return
-        val (hx, hy, hw, hh) = dropHeaderRect
-        val rowH = 13
-        val listW = maxOf(hw, s.profiles.maxOf { font.width(it.cuteName) } + 14)
-        val listX = hx + hw - listW // right-aligned with the chip
-        var y = hy + hh
-        val listH = s.profiles.size * rowH
-        ctx.fill(listX, y, listX + listW, y + listH, Theme.SURFACE)
-        border(ctx, listX, y, listW, listH, Theme.BORDER)
-        for ((i, profile) in s.profiles.withIndex()) {
-            val rect = intArrayOf(listX, y, listW, rowH)
-            val selected = i == profileIndex
-            if (hit(rect, mouseX, mouseY)) ctx.fill(listX + 1, y, listX + listW - 1, y + rowH, Theme.SURFACE_ALT)
-            if (selected) ctx.fill(listX + 1, y + 2, listX + 3, y + rowH - 2, Theme.ACCENT)
-            ctx.text(font, profile.cuteName, listX + 8, y + 3, if (selected) Theme.ACCENT else Theme.TEXT, true)
-            dropEntryRects += rect to i
-            y += rowH
-        }
+    private fun icon(name: String): ItemStack {
+        val id = Identifier.tryParse(name) ?: return ItemStack.EMPTY
+        return ItemStack(BuiltInRegistries.ITEM.getValue(id))
     }
 
     private fun renderContent(
         ctx: GuiGraphicsExtractor, x: Int, y: Int, width: Int, height: Int, mouseX: Int, mouseY: Int,
     ) {
-        subnavRects.clear()
         when (val s = state) {
             is ProfileState.Loading -> centered(ctx, "Loading…", Theme.TEXT_MUTED, x + width / 2, y + height / 2)
             is ProfileState.Error -> centered(ctx, s.message, Theme.WARN, x + width / 2, y + height / 2)
             is ProfileState.Loaded -> when (page) {
                 Page.GENERAL -> renderGeneral(ctx, s, x, y, width, height, mouseX, mouseY)
-                Page.SKILLS -> renderSkills(ctx, x, y, width, height, mouseX, mouseY)
-                Page.DUNGEONS -> renderDungeons(ctx, s, x, y, width, height, mouseX, mouseY)
+                Page.BESTIARY -> renderBestiary(ctx, s, x, y, width, height, mouseX, mouseY)
+                Page.CATACOMBS -> renderDungeons(ctx, s, x, y, width, height, mouseX, mouseY)
+                Page.COLLECTIONS -> renderCollections(ctx, s, x, y, width, height, mouseX, mouseY)
+                Page.MINING -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> MiningPage.build(p, w) }
+                Page.FISHING -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> FishingPage.build(p, w) }
+                Page.FARMING -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> FarmingPage.build(p, w) }
+                Page.HUNTING -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> HuntingPage.build(p, w) }
+                Page.FORAGING -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> ForagingPage.build(p, w) }
+                Page.PETS -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> PetsPage.build(p, w) }
+                Page.INVENTORY -> renderInventory(ctx, s, x, y, width, height, mouseX, mouseY)
+                Page.RIFT -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> RiftPage.build(p, w) }
                 else -> placeholder(ctx, page.title, x, y, width, height)
             }
         }
@@ -195,12 +229,53 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         val sideX = x + width - GeneralPage.SIDE_WIDTH
         GeneralPage.side(s, index, height, entityFor(s, index)).render(ctx, sideX, y, mouseX, mouseY)
 
-        val onSkill: (SkillType) -> Unit = { st -> SkillTab.forSkill(st)?.let { skillTab = it }; page = Page.SKILLS }
-        val onCatacombs: () -> Unit = { page = Page.DUNGEONS }
+        val onSkill: (SkillType) -> Unit = { st -> Page.forSkill(st)?.let { page = it } }
+        val onCatacombs: () -> Unit = { page = Page.CATACOMBS }
 
         val mainW = width - GeneralPage.SIDE_WIDTH - GeneralPage.GAP
-        val main = GeneralPage.main(s, index, mainW, onSkill, onCatacombs)
-        renderScaled(ctx, main, x, y, height, mouseX, mouseY)
+        renderScaledFill(ctx, x, y, mainW, height, mouseX, mouseY) { w, h ->
+            GeneralPage.main(s, index, w, h, onSkill, onCatacombs)
+        }
+    }
+
+    private fun renderBestiary(
+        ctx: GuiGraphicsExtractor, s: ProfileState.Loaded,
+        x: Int, y: Int, width: Int, height: Int, mouseX: Int, mouseY: Int,
+    ) {
+        val index = profileIndex.coerceIn(0, s.profiles.size - 1)
+        renderScaledFill(ctx, x, y, width, height, mouseX, mouseY) { w, _ ->
+            BestiaryPage.build(s.profiles[index], w, bestiaryIsland) { bestiaryIsland = it }
+        }
+    }
+
+    /** Renders a page that needs no per-page state — built from the active profile and width. */
+    private fun renderStatic(
+        ctx: GuiGraphicsExtractor, s: ProfileState.Loaded,
+        x: Int, y: Int, width: Int, height: Int, mouseX: Int, mouseY: Int,
+        build: (schrumbo.pv.data.SkyblockProfile, Int) -> schrumbo.pv.ui.component.Component,
+    ) {
+        val index = profileIndex.coerceIn(0, s.profiles.size - 1)
+        renderScaledFill(ctx, x, y, width, height, mouseX, mouseY) { w, _ -> build(s.profiles[index], w) }
+    }
+
+    private fun renderInventory(
+        ctx: GuiGraphicsExtractor, s: ProfileState.Loaded,
+        x: Int, y: Int, width: Int, height: Int, mouseX: Int, mouseY: Int,
+    ) {
+        val index = profileIndex.coerceIn(0, s.profiles.size - 1)
+        renderScaledFill(ctx, x, y, width, height, mouseX, mouseY) { w, _ ->
+            InventoryPage.build(s.profiles[index], w, inventoryTab) { inventoryTab = it }
+        }
+    }
+
+    private fun renderCollections(
+        ctx: GuiGraphicsExtractor, s: ProfileState.Loaded,
+        x: Int, y: Int, width: Int, height: Int, mouseX: Int, mouseY: Int,
+    ) {
+        val index = profileIndex.coerceIn(0, s.profiles.size - 1)
+        renderScaledFill(ctx, x, y, width, height, mouseX, mouseY) { w, _ ->
+            CollectionsPage.build(s.profiles[index], w, collectionCategory) { collectionCategory = it }
+        }
     }
 
     private fun renderDungeons(
@@ -208,16 +283,27 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         x: Int, y: Int, width: Int, height: Int, mouseX: Int, mouseY: Int,
     ) {
         val index = profileIndex.coerceIn(0, s.profiles.size - 1)
-        val content = DungeonsPage.build(s.profiles[index], width, dungeonMaster) { dungeonMaster = it }
-        renderScaled(ctx, content, x, y, height, mouseX, mouseY)
+        renderScaledFill(ctx, x, y, width, height, mouseX, mouseY) { w, _ ->
+            DungeonsPage.build(s.profiles[index], w, dungeonMaster) { dungeonMaster = it }
+        }
     }
 
-    /** Renders a click-aware page [content] at ([x],[y]), scaling it down uniformly if it overflows [height]. */
-    private fun renderScaled(
-        ctx: GuiGraphicsExtractor, content: schrumbo.pv.ui.component.Component,
-        x: Int, y: Int, height: Int, mouseX: Int, mouseY: Int,
+    /**
+     * Renders a click-aware page so it fills [availW]×[availH]. The page is built once; if it's
+     * taller than [availH] it's rebuilt at a proportionally wider logical width and then scaled down
+     * uniformly — so the down-scale fills the width instead of leaving an empty strip on the right.
+     */
+    private fun renderScaledFill(
+        ctx: GuiGraphicsExtractor, x: Int, y: Int, availW: Int, availH: Int, mouseX: Int, mouseY: Int,
+        build: (Int, Int) -> schrumbo.pv.ui.component.Component,
     ) {
-        val scale = if (content.height > height) height.toFloat() / content.height else 1f
+        var content = build(availW, availH)
+        var scale = 1f
+        if (content.height > availH) {
+            val first = availH.toFloat() / content.height
+            content = build((availW / first).toInt().coerceAtLeast(availW), availH)
+            scale = availH.toFloat() / content.height
+        }
         mainTfX = x
         mainTfY = y
         mainScale = scale
@@ -229,27 +315,6 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         val lmy = ((mouseY - y) / scale).toInt()
         content.render(ctx, 0, 0, lmx, lmy)
         ctx.pose().popMatrix()
-    }
-
-    private fun renderSkills(
-        ctx: GuiGraphicsExtractor, x: Int, y: Int, width: Int, height: Int, mouseX: Int, mouseY: Int,
-    ) {
-        val navW = 92
-        ctx.fill(x + navW, y, x + navW + 1, y + height, Theme.BORDER)
-        var ry = y
-        val rowH = 14
-        for (tab in SkillTab.entries) {
-            val active = tab == skillTab
-            val rect = intArrayOf(x, ry, navW, rowH)
-            val hovered = hit(rect, mouseX, mouseY)
-            if (active || hovered) ctx.fill(x, ry, x + navW, ry + rowH, Theme.SURFACE_ALT)
-            if (active) ctx.fill(x, ry, x + 2, ry + rowH, Theme.ACCENT)
-            val color = if (active) Theme.ACCENT else if (hovered) Theme.TEXT else Theme.TEXT_MUTED
-            ctx.text(font, tab.title, x + 8, ry + 3, color, true)
-            subnavRects += rect to tab
-            ry += rowH
-        }
-        placeholder(ctx, skillTab.title, x + navW + 1, y, width - navW - 1, height)
     }
 
     private fun placeholder(ctx: GuiGraphicsExtractor, title: String, x: Int, y: Int, width: Int, height: Int) {
@@ -298,32 +363,22 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         }
         inputFocused = false
 
-        // Header toggles (so clicking it again while open closes the menu).
-        if (hit(dropHeaderRect, mx, my)) {
-            dropdownOpen = !dropdownOpen
+        if (hit(skycryptRect, mx, my)) {
+            skyCryptUrl()?.let { Util.getPlatform().openUri(it) }
             return true
         }
-        if (dropdownOpen) {
-            for ((rect, index) in dropEntryRects) {
-                if (hit(rect, mx, my)) {
-                    profileIndex = index
-                    cachedEntity = null
-                    dropdownOpen = false
-                    return true
-                }
+        for ((rect, index) in profileChipRects) {
+            if (hit(rect, mx, my)) {
+                profileIndex = index
+                cachedEntity = null
+                return true
             }
-            dropdownOpen = false // clicked outside the menu
         }
 
         for ((rect, p) in tabRects) {
             if (hit(rect, mx, my)) { page = p; return true }
         }
-        if (page == Page.SKILLS) {
-            for ((rect, tab) in subnavRects) {
-                if (hit(rect, mx, my)) { skillTab = tab; return true }
-            }
-        }
-        // Component pages (General, Dungeons) record click regions in the scaled content space.
+        // Component pages (General, Catacombs) record click regions in the scaled content space.
         val lmx = ((mx - mainTfX) / mainScale).toInt()
         val lmy = ((my - mainTfY) / mainScale).toInt()
         if (ClickRegistry.fire(lmx, lmy)) return true
