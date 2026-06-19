@@ -47,8 +47,25 @@ object DungeonsPage {
             tiles(d, width),
             section("CLASSES", Text("CA %.2f".format(d.classAverage), Theme.ACCENT), width, classes(d, width)),
             section("FLOORS", tierToggle(master, onTier), width, floors(d, width, master)),
+            section("BOSS COLLECTION", Spacer(0), width, bossCollection(d, width)),
             spacing = 10,
         )
+    }
+
+    private val BOSSES = mapOf(
+        1 to "Bonzo", 2 to "Scarf", 3 to "The Professor", 4 to "Thorn",
+        5 to "Livid", 6 to "Sadan", 7 to "Necron",
+    )
+
+    /** Boss collection: kills per floor boss (a floor completion = one boss kill), normal + master. */
+    private fun bossCollection(d: DungeonData, width: Int): Component {
+        val cellW = (width - COL_GAP) / 2
+        val rows = (1..7).map { f ->
+            val floor = d.floors.firstOrNull { it.floor == f }
+            val kills = (floor?.completions ?: 0L) + (floor?.masterCompletions ?: 0L)
+            SpaceBetween(cellW, Text(BOSSES[f]!!, if (kills > 0) Theme.TEXT else Theme.TEXT_MUTED), Text("%,d".format(kills), Theme.GOLD))
+        }
+        return twoColumns(rows)
     }
 
     private fun catacombs(d: DungeonData, width: Int): Component = Column(
@@ -109,9 +126,10 @@ object DungeonsPage {
 
     private fun segButton(label: String, active: Boolean, onClick: () -> Unit): Component {
         val w = font().width(label) + 16
+        // Nudge the label 1px down so it sits optically centred in the box.
+        val inner = Column(Spacer(0, 1), Text(label, if (active) Theme.ACCENT else Theme.TEXT_MUTED), spacing = 0)
         val btn = Frame(
-            w, 14,
-            Text(label, if (active) Theme.ACCENT else Theme.TEXT_MUTED),
+            w, 14, inner,
             Theme.SURFACE_ALT,
             if (active) Theme.ACCENT else Theme.BORDER,
             HAlign.CENTER, VAlign.CENTER,

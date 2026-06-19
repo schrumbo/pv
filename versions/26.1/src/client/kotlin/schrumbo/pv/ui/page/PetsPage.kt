@@ -6,68 +6,69 @@ import schrumbo.pv.data.SkyblockProfile
 import schrumbo.pv.ui.Theme
 import schrumbo.pv.ui.component.Column
 import schrumbo.pv.ui.component.Component
+import schrumbo.pv.ui.component.Frame
+import schrumbo.pv.ui.component.HAlign
 import schrumbo.pv.ui.component.Item
-import schrumbo.pv.ui.component.ProgressBar
 import schrumbo.pv.ui.component.Row
-import schrumbo.pv.ui.component.SpaceBetween
 import schrumbo.pv.ui.component.Text
 import schrumbo.pv.ui.component.Tooltip
 import schrumbo.pv.ui.component.VAlign
 import schrumbo.pv.util.Format
 
-/** Pets page: every owned pet as its real skull, rarity-coloured, with a level bar; active pet first. */
+/** Pets page: every pet as its skin/skull with held item, level shown as a stack-size count. */
 object PetsPage {
 
     private val TIER_COLORS = mapOf(
-        "COMMON" to 0xFFFFFFFF.toInt(),
-        "UNCOMMON" to 0xFF55FF55.toInt(),
-        "RARE" to 0xFF5599FF.toInt(),
-        "EPIC" to 0xFFAA44FF.toInt(),
-        "LEGENDARY" to 0xFFFFB534.toInt(),
-        "MYTHIC" to 0xFFFF77DD.toInt(),
+        "COMMON" to 0xFFFFFFFF.toInt(), "UNCOMMON" to 0xFF55FF55.toInt(), "RARE" to 0xFF5599FF.toInt(),
+        "EPIC" to 0xFFAA44FF.toInt(), "LEGENDARY" to 0xFFFFB534.toInt(), "MYTHIC" to 0xFFFF77DD.toInt(),
         "DIVINE" to 0xFF44DDEE.toInt(),
     )
-
     private val TIER_RANK = listOf("COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY", "MYTHIC", "DIVINE")
 
     fun build(p: SkyblockProfile, width: Int): Component {
-        val active = p.pets.firstOrNull { it.active }
-        val activeName = active?.let { PetRegistry.displayName(it.type) } ?: "none"
         val sorted = p.pets.sortedWith(
             compareByDescending<PetEntry> { it.active }
                 .thenByDescending { TIER_RANK.indexOf(it.tier) }
                 .thenByDescending { PetRegistry.level(it).level },
         )
+        val totalXp = p.pets.sumOf { it.exp }.toLong()
         return Column(
-            PageKit.pageHeader("Pets", "· ${p.pets.size} pets · active: $activeName", width),
+            PageKit.pageHeader("Pets", "· ${p.pets.size} pets · ${petScore(p.pets)} pet score · ${Format.compact(totalXp)} total xp", width),
             grid(sorted, width),
             spacing = 8,
         )
     }
 
-    private fun grid(pets: List<PetEntry>, width: Int): Component {
-        if (pets.isEmpty()) return Text("No pets", Theme.TEXT_MUTED)
-        val cellW = PageKit.cellW(width, 3)
-        return PageKit.grid(pets.map { petCell(it, cellW) }, width, cols = 3, rowGap = 6)
+    /** Pet score: per unique species, points equal to the rank of its highest owned rarity. */
+    private fun petScore(pets: List<PetEntry>): Int {
+        val best = HashMap<String, Int>()
+        for (pet in pets) {
+            val rank = TIER_RANK.indexOf(pet.tier) + 1
+            best[pet.type] = maxOf(best[pet.type] ?: 0, rank)
+        }
+        return best.values.sum()
     }
 
-    private fun petCell(pet: PetEntry, cellW: Int): Component {
+    private const val ICON = 26
+    private const val GAP = 6
+
+    /** Icon-only grid: each pet is just its skull with the level in the corner; details live in the
+     *  tooltip. The active pet gets a green-bordered tile. Columns fill the available width. */
+    private fun grid(pets: List<PetEntry>, width: Int): Component {
+        if (pets.isEmpty()) return Text("No pets", Theme.TEXT_MUTED)
+        val cols = ((width + GAP) / (ICON + GAP)).coerceAtLeast(1)
+        val cells = pets.map { petCell(it) }
+        return Column(cells.chunked(cols).map { Row(it, spacing = GAP) }, spacing = GAP)
+    }
+
+    private fun petCell(pet: PetEntry): Component {
         val lvl = PetRegistry.level(pet)
-        val tierColor = TIER_COLORS[pet.tier] ?: Theme.TEXT
-        val innerW = cellW - 18 - 5
+        val icon = Item(PetRegistry.iconFor(pet), ICON - 2, tooltip = false, corner = lvl.level.toString())
+        val bg = if (pet.active) Theme.SURFACE_ALT else null
+        val border = if (pet.active) Theme.GREEN else null
+        val cell = Frame(ICON, ICON, icon, bg, border, HAlign.CENTER, VAlign.CENTER)
         val name = PetRegistry.displayName(pet.type)
-        val levelLabel = if (lvl.maxed) "Lv ${lvl.level} ✦" else "Lv ${lvl.level}"
-        val body = Column(
-            SpaceBetween(
-                innerW,
-                Text(PageKit.clip((if (pet.active) "▶ " else "") + name, innerW - 42), if (pet.active) Theme.GREEN else tierColor),
-                Text(levelLabel, if (lvl.maxed) Theme.GOLD else Theme.TEXT_MUTED),
-            ),
-            ProgressBar(innerW, 3, lvl.progress, tierColor, Theme.SURFACE_ALT),
-            spacing = 2,
-        )
-        val cell = Row(Item(PetRegistry.icon(pet.type), 18, tooltip = false), body, spacing = 5, align = VAlign.CENTER)
-        val held = pet.heldItem?.let {
+        val heldLine = pet.heldItem?.let {
             "§7Held: §f" + it.removePrefix("PET_ITEM_").split('_').joinToString(" ") { w -> w.replaceFirstChar { c -> c.uppercase() } }
         }
         return Tooltip(
@@ -76,18 +77,14 @@ object PetsPage {
                 "${tierHex(pet.tier)}$name",
                 "§7${pet.tier.lowercase().replaceFirstChar { it.uppercase() }}",
                 "§7Level §f${lvl.level}§7/§f${lvl.maxLevel}  §8(${Format.compact(pet.exp.toLong())} xp)",
-                held,
+                pet.skin?.let { "§dSkin: §f" + it.split('_').joinToString(" ") { w -> w.replaceFirstChar { c -> c.uppercase() } } },
+                heldLine,
             ),
         )
     }
 
     private fun tierHex(tier: String): String = when (tier) {
-        "UNCOMMON" -> "§a"
-        "RARE" -> "§9"
-        "EPIC" -> "§5"
-        "LEGENDARY" -> "§6"
-        "MYTHIC" -> "§d"
-        "DIVINE" -> "§b"
-        else -> "§f"
+        "UNCOMMON" -> "§a"; "RARE" -> "§9"; "EPIC" -> "§5"; "LEGENDARY" -> "§6"
+        "MYTHIC" -> "§d"; "DIVINE" -> "§b"; else -> "§f"
     }
 }

@@ -4,17 +4,21 @@ import net.minecraft.client.Minecraft
 import net.minecraft.core.registries.BuiltInRegistries
 import net.minecraft.resources.Identifier
 import net.minecraft.world.item.ItemStack
+import schrumbo.pv.data.SkillType
+import schrumbo.pv.data.SkyblockProfile
 import schrumbo.pv.ui.Theme
 import schrumbo.pv.ui.component.Box
 import schrumbo.pv.ui.component.Column
 import schrumbo.pv.ui.component.Component
 import schrumbo.pv.ui.component.Frame
 import schrumbo.pv.ui.component.HAlign
+import schrumbo.pv.ui.component.ProgressBar
 import schrumbo.pv.ui.component.Row
 import schrumbo.pv.ui.component.SpaceBetween
 import schrumbo.pv.ui.component.Spacer
 import schrumbo.pv.ui.component.Text
 import schrumbo.pv.ui.component.VAlign
+import schrumbo.pv.util.Format
 
 /** Shared layout helpers for the simpler stat pages (Mining, Fishing, Farming, Hunting, Foraging). */
 object PageKit {
@@ -40,6 +44,30 @@ object PageKit {
         Box(width, 1, Theme.BORDER),
         spacing = 4,
     )
+
+    /**
+     * A skill-page header: the skill name + its (overflow) level, a full-width progress bar, the XP /
+     * to-next line, plus an optional page-specific [extra] summary. Falls back to [pageHeader] if the
+     * skill is missing. Maxed skills render in gold.
+     */
+    fun skillHeader(p: SkyblockProfile, type: SkillType, width: Int, extra: String = ""): Component {
+        val lvl = p.skills.firstOrNull { it.type == type }?.level ?: return pageHeader(type.display, extra, width)
+        val fg = if (lvl.maxed) Theme.GOLD else Theme.ACCENT
+        val levelText = if (lvl.maxed) "Level ${lvl.level} · MAX" else "Level ${lvl.level}"
+        val right = if (lvl.maxed) "${Format.compact(lvl.totalXp)} XP"
+        else "${(lvl.progress * 100).toInt()}% · ${Format.compact(lvl.xpToNext)} to next"
+        return Column(
+            SpaceBetween(
+                width,
+                Row(Text(type.display, Theme.TEXT), Text(levelText, fg), spacing = 6, align = VAlign.CENTER),
+                Text(right, Theme.TEXT_MUTED),
+            ),
+            ProgressBar(width, 4, lvl.progress, fg, Theme.SURFACE_ALT),
+            if (extra.isEmpty()) Spacer(0, 0) else Text(extra, Theme.TEXT_MUTED),
+            Box(width, 1, Theme.BORDER),
+            spacing = 4,
+        )
+    }
 
     /** A bordered key/value tile (label on top, value below). */
     fun tile(w: Int, key: String, value: String, valueColor: Int = Theme.TEXT): Component {

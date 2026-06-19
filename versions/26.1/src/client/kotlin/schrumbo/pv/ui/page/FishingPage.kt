@@ -1,74 +1,89 @@
 package schrumbo.pv.ui.page
 
+import schrumbo.pv.data.FishingRegistry
+import schrumbo.pv.data.SkillType
 import schrumbo.pv.data.SkyblockProfile
 import schrumbo.pv.data.TrophyData
 import schrumbo.pv.data.TrophyFish
 import schrumbo.pv.ui.Theme
 import schrumbo.pv.ui.component.Column
 import schrumbo.pv.ui.component.Component
+import schrumbo.pv.ui.component.Item
 import schrumbo.pv.ui.component.Row
-import schrumbo.pv.ui.component.SpaceBetween
+import schrumbo.pv.ui.component.Spacer
 import schrumbo.pv.ui.component.Text
 import schrumbo.pv.ui.component.Tooltip
-import schrumbo.pv.ui.component.VAlign
 import schrumbo.pv.util.Format
 
-/** Fishing page: trophy-fish catches per tier (no skill level — that's General). */
+/** Fishing page: trophy-fish heads (per tier, count as stack size) and fishing stats. */
 object FishingPage {
 
-    private const val BRONZE = 0xFFCD7F32.toInt()
-    private const val SILVER = 0xFFD8D8D8.toInt()
-    private const val GOLD = 0xFFFFB534.toInt()
     private const val DIAMOND = 0xFF4DD0E1.toInt()
+    private const val GOLD = 0xFFFFB534.toInt()
+    private const val SILVER = 0xFFD8D8D8.toInt()
+    private const val BRONZE = 0xFFCD7F32.toInt()
+
+    /** Tier rows, top (diamond) to bottom (bronze). */
+    private val TIERS = listOf("diamond" to DIAMOND, "gold" to GOLD, "silver" to SILVER, "bronze" to BRONZE)
 
     fun build(p: SkyblockProfile, width: Int): Component {
         val t = p.trophy
         return Column(
-            PageKit.pageHeader("Fishing", "· ${Format.compact(t.totalCaught)} trophy fish caught", width),
-            PageKit.tileRow(
-                width,
-                listOf(
-                    "Bronze" to (Format.compact(t.fish.sumOf { it.bronze }) to BRONZE),
-                    "Silver" to (Format.compact(t.fish.sumOf { it.silver }) to SILVER),
-                    "Gold" to (Format.compact(t.fish.sumOf { it.gold }) to GOLD),
-                    "Diamond" to (Format.compact(t.fish.sumOf { it.diamond }) to DIAMOND),
-                ),
-            ),
-            PageKit.section("TROPHY FISH", width, fish(t, width)),
+            PageKit.skillHeader(p, SkillType.FISHING, width),
+            PageKit.section("TROPHY FISH", width, fish(t)),
+            PageKit.section("STATS", width, stats(t, width)),
             spacing = 10,
         )
     }
 
-    private fun fish(t: TrophyData, width: Int): Component {
-        val cellW = PageKit.cellW(width, 2)
-        return PageKit.grid(t.fish.map { fishRow(it, cellW) }, width, cols = 2)
+    /** One column per fish; four heads bottom-up (bronze → diamond), catch count as the stack size. */
+    private fun fish(t: TrophyData): Component {
+        if (t.fish.isEmpty()) return Text("No trophy fish caught", Theme.TEXT_MUTED)
+        // Leading spacer: the per-tier count is drawn left of each head and would otherwise be
+        // scissor-clipped on the first column when it overflows the icon (big six/seven-digit counts).
+        return Row(listOf(Spacer(6, 0)) + t.fish.map { fishColumn(it) }, spacing = 3)
     }
 
-    private fun fishRow(f: TrophyFish, cellW: Int): Component {
-        val nameColor = when (f.highestTier) {
-            4 -> DIAMOND
-            3 -> GOLD
-            2 -> SILVER
-            1 -> BRONZE
-            else -> Theme.TEXT_MUTED
+    private fun fishColumn(f: TrophyFish): Component {
+        val heads = TIERS.map { (tier, _) ->
+            val count = when (tier) {
+                "diamond" -> f.diamond; "gold" -> f.gold; "silver" -> f.silver; else -> f.bronze
+            }
+            val head = FishingRegistry.head(f.key, tier)
+            if (head.isEmpty) return@map Spacer(18, 18)
+            val icon = Item(head, 18, tooltip = false, corner = if (count > 0) Format.compact(count) else null)
+            Tooltip(icon, listOf("§f${f.name}", "§7${tier.replaceFirstChar { it.uppercase() }}: §f${Format.compact(count)}", "§7Total: §f${Format.compact(f.total)}"))
         }
-        val counts = Row(
-            Text(Format.compact(f.bronze), BRONZE),
-            Text(Format.compact(f.silver), SILVER),
-            Text(Format.compact(f.gold), GOLD),
-            Text(Format.compact(f.diamond), DIAMOND),
-            spacing = 7,
-            align = VAlign.CENTER,
-        )
-        val row = SpaceBetween(cellW, Text(PageKit.clip(f.name, cellW - 90), nameColor), counts)
-        return Tooltip(
-            row,
+        return Column(heads, spacing = 2)
+    }
+
+    private fun stats(t: TrophyData, width: Int): Component = Column(
+        PageKit.tileRow(
+            width,
             listOf(
-                "§f${f.name}",
-                "§7Total: §f${Format.compact(f.total)}",
-                "§7Bronze §f${f.bronze}  §7Silver §f${f.silver}",
-                "§7Gold §f${f.gold}  §7Diamond §f${f.diamond}",
+                "Items Fished" to (Format.compact(t.itemsFished) to Theme.ACCENT),
+                "Treasure" to (Format.compact(t.treasure) to Theme.GOLD),
+                "Large Treasure" to (Format.compact(t.largeTreasure) to Theme.GOLD),
             ),
-        )
+        ),
+        PageKit.tileRow(
+            width,
+            listOf(
+                "Sea Creatures" to (Format.compact(t.seaCreatures) to Theme.GREEN),
+                "Dolphin Milestone" to (dolphinTier(t.seaCreatures) to DIAMOND),
+                "Trophy Caught" to (Format.compact(t.totalCaught) to Theme.TEXT),
+            ),
+        ),
+        spacing = 8,
+    )
+
+    /** Dolphin pet rarity milestone from total sea-creature kills. */
+    private fun dolphinTier(kills: Long): String = when {
+        kills >= 100_000 -> "Legendary"
+        kills >= 25_000 -> "Epic"
+        kills >= 5_000 -> "Rare"
+        kills >= 1_000 -> "Uncommon"
+        kills >= 250 -> "Common"
+        else -> "—"
     }
 }

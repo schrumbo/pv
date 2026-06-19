@@ -34,17 +34,39 @@ class ProgressBar(
     }
 }
 
-/** A scaled item icon (PiP). Shows the vanilla tooltip on hover unless [tooltip] is disabled. */
+/**
+ * An item icon rendered via the vanilla item pipeline (handles textured skulls). [decorations] draws
+ * the real stack count + durability/cooldown like an inventory slot; [corner] draws a custom compact
+ * label in the stack-count corner (e.g. a level or a catch count). Shows the tooltip on hover unless
+ * [tooltip] is disabled.
+ */
 class Item(
     private val stack: ItemStack,
     private val size: Int = 16,
     private val tooltip: Boolean = true,
+    private val decorations: Boolean = false,
+    private val corner: String? = null,
 ) : Component() {
     override val width get() = size
     override val height get() = size
 
     override fun render(ctx: GuiGraphicsExtractor, x: Int, y: Int, mouseX: Int, mouseY: Int) {
-        ItemRenderUtils.renderItem(ctx, stack, x, y, size / 16f)
+        if (!stack.isEmpty) {
+            // Vanilla item rendering (handles textured player-head skulls + async skin resolution);
+            // pose-scaled for non-16px icons. Crisp because items are model geometry, not bitmaps.
+            if (size == 16) {
+                ctx.item(stack, x, y)
+                if (decorations) ctx.itemDecorations(font, stack, x, y)
+            } else {
+                // Non-16 icons go through the PiP pipeline: it renders the item model at the target
+                // size, so textured skulls stay crisp instead of being raster-upscaled (pixelated).
+                ItemRenderUtils.renderItem(ctx, stack, x, y, size / 16f)
+            }
+        }
+        corner?.let {
+            val tx = x + size - font.width(it) - 1
+            ctx.text(font, it, tx, y + size - font.lineHeight + 1, 0xFFFFFFFF.toInt(), true)
+        }
         if (tooltip && mouseX in x until x + size && mouseY in y until y + size) {
             ctx.setTooltipForNextFrame(font, stack, Hover.screenX, Hover.screenY)
         }

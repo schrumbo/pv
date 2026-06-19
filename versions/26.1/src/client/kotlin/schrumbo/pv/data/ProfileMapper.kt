@@ -42,6 +42,9 @@ object ProfileMapper {
             pets = pets(member),
             containers = containers(member),
             armor = armor(member),
+            equipment = equipment(member),
+            magicalPower = member.obj("accessory_bag_storage")?.num("highest_magical_power")?.toInt() ?: 0,
+            selectedPower = member.obj("accessory_bag_storage")?.str("selected_power"),
             bank = profile.obj("banking")?.num("balance")?.toLong() ?: 0L,
             purse = (member.obj("currencies")?.num("coin_purse") ?: member.num("coin_purse"))?.toLong() ?: 0L,
             firstJoin = member.obj("profile")?.num("first_join")?.toLong() ?: 0L,
@@ -117,6 +120,11 @@ object ProfileMapper {
         return InventoryDecoder.decode(data)
     }
 
+    private fun equipment(member: JsonObject): List<ItemStack> {
+        val data = member.obj("inventory")?.obj("equipment_contents")?.str("data") ?: return emptyList()
+        return InventoryDecoder.decode(data).reversed()
+    }
+
     private fun skyblockLevel(member: JsonObject): Leveling.Level {
         val xp = member.obj("leveling")?.num("experience")?.toLong() ?: 0L
         val level = (xp / 100).toInt()
@@ -180,6 +188,7 @@ object ProfileMapper {
             glacite = mc?.num("powder_glacite")?.toLong() ?: 0L,
             glaciteTotal = mc?.num("powder_glacite_total")?.toLong() ?: 0L,
             tokens = mc?.num("tokens")?.toLong() ?: 0L,
+            nodes = treeNodes(member, "mining", mc),
             crystals = crystals,
             corpses = corpses,
             fossilsDonated = glacite?.array("fossils_donated")?.size() ?: 0,
@@ -187,8 +196,27 @@ object ProfileMapper {
         )
     }
 
+    /**
+     * Perk-tree node levels (`id -> level`) for a skill. The unified `skill_tree.nodes.<skill>` is
+     * preferred; mining falls back to the legacy `mining_core.nodes`. Toggle flags are dropped.
+     */
+    private fun treeNodes(member: JsonObject, skill: String, legacy: JsonObject? = null): Map<String, Int> {
+        val src = member.obj("skill_tree")?.obj("nodes")?.obj(skill) ?: legacy?.obj("nodes")
+        val out = HashMap<String, Int>()
+        src?.entrySet()?.forEach { (key, value) ->
+            if (key.startsWith("toggle_")) return@forEach
+            if (value.isJsonPrimitive && value.asJsonPrimitive.isNumber) out[key] = value.asInt
+        }
+        return out
+    }
+
     private fun trophyFish(member: JsonObject): TrophyData {
-        val tf = member.obj("trophy_fish") ?: return TrophyData(0L, emptyList())
+        val stats = member.obj("player_stats")
+        val itemsFished = stats?.obj("items_fished")
+        val tf = member.obj("trophy_fish")
+            ?: return TrophyData(0L, emptyList(), itemsFished?.num("total")?.toLong() ?: 0L,
+                itemsFished?.num("treasure")?.toLong() ?: 0L, itemsFished?.num("large_treasure")?.toLong() ?: 0L,
+                stats?.num("sea_creature_kills")?.toLong() ?: 0L)
         val bases = tf.entrySet()
             .filter { (k, v) -> k != "total_caught" && k != "rewards" && v.isJsonPrimitive && v.asJsonPrimitive.isNumber }
             .map { it.key }
@@ -196,6 +224,7 @@ object ProfileMapper {
             .distinct()
         val fish = bases.map { base ->
             TrophyFish(
+                key = base,
                 name = prettify(base),
                 bronze = tf.num("${base}_bronze")?.toLong() ?: 0L,
                 silver = tf.num("${base}_silver")?.toLong() ?: 0L,
@@ -203,7 +232,14 @@ object ProfileMapper {
                 diamond = tf.num("${base}_diamond")?.toLong() ?: 0L,
             )
         }.sortedByDescending { it.total }
-        return TrophyData(tf.num("total_caught")?.toLong() ?: 0L, fish)
+        return TrophyData(
+            totalCaught = tf.num("total_caught")?.toLong() ?: 0L,
+            fish = fish,
+            itemsFished = itemsFished?.num("total")?.toLong() ?: 0L,
+            treasure = itemsFished?.num("treasure")?.toLong() ?: 0L,
+            largeTreasure = itemsFished?.num("large_treasure")?.toLong() ?: 0L,
+            seaCreatures = stats?.num("sea_creature_kills")?.toLong() ?: 0L,
+        )
     }
 
     private fun jacobs(member: JsonObject): JacobsData {
@@ -212,12 +248,19 @@ object ProfileMapper {
         val unique = jc?.obj("unique_brackets")
         val perks = jc?.obj("perks")
         val pbs = HashMap<String, Long>()
+        // Diamond/Platinum medals are never deposited into `medals_inv` (only bronze/silver/gold are
+        // spendable). Like SkyCrypt, count earned diamond/platinum from each contest's claimed medal.
+        val earned = HashMap<String, Int>()
         jc?.obj("contests")?.entrySet()?.forEach { (key, value) ->
+            val o = value.asJsonObject
             val crop = key.substringAfterLast(':')
-            val collected = value.asJsonObject.num("collected")?.toLong() ?: 0L
+            val collected = o.num("collected")?.toLong() ?: 0L
             pbs[crop] = maxOf(pbs[crop] ?: 0L, collected)
+            o.str("claimed_medal")?.let { earned[it] = (earned[it] ?: 0) + 1 }
         }
         return JacobsData(
+            diamond = earned["diamond"] ?: medals?.num("diamond")?.toInt() ?: 0,
+            platinum = earned["platinum"] ?: medals?.num("platinum")?.toInt() ?: 0,
             gold = medals?.num("gold")?.toInt() ?: 0,
             silver = medals?.num("silver")?.toInt() ?: 0,
             bronze = medals?.num("bronze")?.toInt() ?: 0,
@@ -233,13 +276,15 @@ object ProfileMapper {
     }
 
     private fun attributes(member: JsonObject): AttributesData {
-        val stacks = member.obj("attributes")?.obj("stacks")
-        val attrs = stacks?.entrySet()
-            ?.map { (key, value) -> NamedLevel(prettify(key), value.asInt) }
-            ?.sortedByDescending { it.level } ?: emptyList()
+        // Syphoned shard total per attribute id (id → count); drives the attribute level via the rarity
+        // cost table. Keys upper-cased to match AttributeRegistry ids.
+        val stacks = HashMap<String, Int>()
+        member.obj("attributes")?.obj("stacks")?.entrySet()?.forEach { (k, v) ->
+            if (v.isJsonPrimitive && v.asJsonPrimitive.isNumber) stacks[k.uppercase()] = v.asInt
+        }
         val owned = member.obj("shards")?.array("owned")
         val shardsOwned = owned?.sumOf { it.asJsonObject.num("amount_owned")?.toLong() ?: 0L } ?: 0L
-        return AttributesData(attrs, shardsOwned, owned?.size() ?: 0)
+        return AttributesData(stacks, shardsOwned, owned?.size() ?: 0)
     }
 
     private fun foraging(member: JsonObject): ForagingData {
@@ -255,21 +300,33 @@ object ProfileMapper {
             whispersSpent = fc?.num("forests_whispers_spent")?.toLong() ?: 0L,
             dailyTrees = fc?.num("daily_trees_cut")?.toLong() ?: 0L,
             trees = trees,
+            nodes = treeNodes(member, "foraging"),
         )
     }
 
     private fun rift(member: JsonObject): RiftData {
         val r = member.obj("rift")
         val stats = member.obj("player_stats")?.obj("rift")
+        val inv = r?.obj("inventory")
+        fun decode(o: JsonObject?): List<ItemStack> = o?.str("data")?.let { InventoryDecoder.decode(it) } ?: emptyList()
         return RiftData(
             motes = member.obj("currencies")?.num("motes_purse")?.toLong() ?: 0L,
             lifetimeMotes = stats?.num("lifetime_motes_earned")?.toLong() ?: 0L,
             enigmaSouls = r?.obj("enigma")?.array("found_souls")?.size() ?: 0,
             galleryTrophies = r?.obj("gallery")?.array("secured_trophies")?.size() ?: 0,
+            securedTrophies = r?.obj("gallery")?.array("secured_trophies")
+                ?.mapNotNull { it.asJsonObject }
+                ?.mapNotNull { t -> t.str("type")?.let { it to (t.num("timestamp")?.toLong() ?: 0L) } }
+                ?.toMap() ?: emptyMap(),
             witherEyes = r?.obj("wither_cage")?.array("killed_eyes")?.size() ?: 0,
             catsFound = r?.obj("dead_cats")?.array("found_cats")?.size() ?: 0,
-            areas = r?.num("lifetime_purchased_boundaries")?.toInt() ?: 0,
             hasMontezuma = r?.obj("dead_cats")?.obj("montezuma") != null,
+            visits = stats?.num("visits")?.toLong() ?: 0L,
+            burgers = r?.obj("castle")?.num("grubber_stacks")?.toInt() ?: 0,
+            porthals = r?.array("lifetime_purchased_boundaries")?.mapNotNull { it.asString } ?: emptyList(),
+            armor = decode(inv?.obj("inv_armor")).reversed(),
+            equipment = decode(inv?.obj("equipment_contents")).reversed(),
+            inventory = decode(inv?.obj("inv_contents")),
         )
     }
 
@@ -284,10 +341,10 @@ object ProfileMapper {
             if (items.any { !it.isEmpty }) out += NamedContainer(name, items)
         }
 
+        // Inventory feeds the Loadout tab; Armor/Equipment are shown there too (no standalone tabs).
         add("Inventory", decode(inv.obj("inv_contents")))
-        add("Armor", decode(inv.obj("inv_armor")).reversed())
-        add("Equipment", decode(inv.obj("equipment_contents")).reversed())
         add("Ender Chest", decode(inv.obj("ender_chest_contents")))
+        add("Wardrobe", decode(inv.obj("wardrobe_contents")))
         val bag = inv.obj("bag_contents")
         add("Accessories", decode(bag?.obj("talisman_bag")))
         add("Potion Bag", decode(bag?.obj("potion_bag")))
@@ -299,6 +356,19 @@ object ProfileMapper {
             ?.flatMap { (_, v) -> if (v.isJsonObject) InventoryDecoder.decode(v.asJsonObject.str("data") ?: "") else emptyList() }
             ?: emptyList()
         add("Backpacks", backpacks)
+
+        // Hunting box — owned shards as a chest-style grid of skulls, amount shown as the stack size.
+        val box = member.obj("shards")?.array("owned")
+            ?.mapNotNull { it.asJsonObject }
+            ?.mapNotNull { o ->
+                val key = o.str("type")?.uppercase()?.removePrefix("SHARD_") ?: return@mapNotNull null
+                val amt = o.num("amount_owned")?.toInt() ?: 0
+                if (amt > 0) key to amt else null
+            }
+            ?.sortedByDescending { it.second }
+            ?.map { (key, amt) -> AttributeRegistry.boxStack(key, amt) }
+            ?: emptyList()
+        add("Hunting Box", box)
         return out
     }
 

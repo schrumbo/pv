@@ -25,13 +25,12 @@ import schrumbo.pv.ui.component.Tooltip
 import schrumbo.pv.ui.component.VAlign
 import schrumbo.pv.util.Format
 
-/** Bestiary page: a left island rail and the selected island's mob tiers as a 2-column grid. */
+/** Bestiary page: a fixed left island rail and the selected island's mob tiers as a scrolling grid. */
 object BestiaryPage {
 
-    private const val RAIL_W = 120
-    private const val GAP = 14
+    const val RAIL_W = 120
     private const val COL_GAP = 14
-    private const val ROW_H = 14
+    private const val ROW_H = 12
 
     /** Representative vanilla icon per island key, shown in the left rail. */
     private val ISLAND_ICONS = mapOf(
@@ -44,29 +43,17 @@ object BestiaryPage {
         "lotus_atoll" to "lily_pad",
     )
 
-    fun build(p: SkyblockProfile, width: Int, selected: Int, onIsland: (Int) -> Unit): Component {
-        val islands = BestiaryRegistry.resolve(p.bestiaryKills)
-        val active = selected.coerceIn(0, islands.size - 1)
-        return Column(
-            header(islands, width),
-            Row(
-                rail(islands, active, onIsland),
-                grid(islands[active], width - RAIL_W - GAP),
-                spacing = GAP,
-                align = VAlign.TOP,
-            ),
-            spacing = 8,
-        )
-    }
+    fun islands(p: SkyblockProfile): List<IslandProgress> = BestiaryRegistry.resolve(p.bestiaryKills)
 
-    private fun header(islands: List<IslandProgress>, width: Int): Component {
+    fun header(islands: List<IslandProgress>, width: Int): Component {
         val maxed = islands.sumOf { it.maxedCount }
         val total = islands.sumOf { it.total }
         val tiers = islands.sumOf { i -> i.mobs.sumOf { it.tier } }
+        val kills = islands.sumOf { i -> i.mobs.sumOf { it.kills } }
         return Column(
             Row(
                 Text("Bestiary", Theme.TEXT),
-                Text("· $maxed/$total maxed · $tiers tiers", Theme.TEXT_MUTED),
+                Text("· ${Format.compact(kills)} kills · $maxed/$total maxed · $tiers tiers", Theme.TEXT_MUTED),
                 spacing = 6,
                 align = VAlign.CENTER,
             ),
@@ -75,7 +62,7 @@ object BestiaryPage {
         )
     }
 
-    private fun rail(islands: List<IslandProgress>, active: Int, onIsland: (Int) -> Unit): Component =
+    fun rail(islands: List<IslandProgress>, active: Int, onIsland: (Int) -> Unit): Component =
         Column(islands.mapIndexed { i, island -> islandRow(island, i == active) { onIsland(i) } }, spacing = 1)
 
     private fun islandRow(island: IslandProgress, active: Boolean, onClick: () -> Unit): Component {
@@ -83,7 +70,8 @@ object BestiaryPage {
         val row = Row(
             Box(2, 11, if (active) Theme.ACCENT else null),
             Item(icon(ISLAND_ICONS[island.def.key] ?: "paper"), 11, tooltip = false),
-            Text(clip(island.def.name, RAIL_W - 26), color),
+            // Spacer above nudges the label down 1px so it sits centred against the icon glyph.
+            Column(Spacer(0, 2), Text(clip(island.def.name, RAIL_W - 26), color), spacing = 0),
             spacing = 4,
             align = VAlign.CENTER,
         )
@@ -91,7 +79,7 @@ object BestiaryPage {
         return Clickable(frame, hoverFill = Theme.HOVER, onClick = onClick)
     }
 
-    private fun grid(island: IslandProgress, width: Int): Component {
+    fun grid(island: IslandProgress, width: Int): Component {
         val cellW = (width - COL_GAP) / 2
         val cells = island.mobs.map { mobCell(it, cellW) }
         val half = (cells.size + 1) / 2
@@ -106,11 +94,7 @@ object BestiaryPage {
     private fun mobCell(m: MobTier, cellW: Int): Component {
         val innerW = cellW - 16 - 5
         val nameColor = if (m.maxed) Theme.GOLD else Theme.TEXT
-        val tierLabel = when {
-            m.maxed -> "MAX"
-            m.tier == 0 -> "—"
-            else -> Format.roman(m.tier)
-        }
+        val tierLabel = "${m.tier}/${m.maxTier}"
         val tierColor = when {
             m.maxed -> Theme.GOLD
             m.tier == 0 -> Theme.TEXT_MUTED
@@ -122,6 +106,7 @@ object BestiaryPage {
             Column(
                 SpaceBetween(innerW, Text(clip(m.def.name, innerW - 30), nameColor), Text(tierLabel, tierColor)),
                 ProgressBar(innerW, 3, m.progress, fg, Theme.SURFACE_ALT),
+                Text("${Format.compact(m.kills)} kills", Theme.TEXT_MUTED),
                 spacing = 2,
             ),
             spacing = 5,

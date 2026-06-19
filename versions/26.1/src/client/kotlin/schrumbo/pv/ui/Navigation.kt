@@ -3,9 +3,9 @@ package schrumbo.pv.ui
 import schrumbo.pv.data.SkillType
 
 /**
- * Top-level pages, in tab order, each shown as an item icon in the tab bar. Only [GENERAL],
- * [BESTIARY], and [CATACOMBS] are populated for now; the rest are placeholders. Skills are their
- * own categories (Enchanting deliberately has none — it stays only in the General skill grid).
+ * Top-level pages, in tab order, each shown as an item icon in the tab bar. All pages are populated.
+ * Skills are their own categories (Enchanting deliberately has none — it stays only in the General
+ * skill grid).
  */
 enum class Page(val title: String, val icon: String) {
     GENERAL("General", "paper"),
@@ -16,7 +16,7 @@ enum class Page(val title: String, val icon: String) {
     FISHING("Fishing", "fishing_rod"),
     HUNTING("Hunting", "lead"),
     CATACOMBS("Catacombs", "dead_bush"),
-    INVENTORY("Inventory", "shulker_box"),
+    INVENTORY("Loadout", "shulker_box"),
     COLLECTIONS("Collections", "item_frame"),
     PETS("Pets", "bone"),
     RIFT("Rift", "ender_eye");

@@ -34,7 +34,13 @@ object CollectionsRegistry {
 
     val categories: List<CategoryDef>
 
+    /** Collection key → base64 head texture, for the Skyblock-custom items that render as skulls. */
+    val skulls: Map<String, String>
+
     init {
+        skulls = javaClass.getResourceAsStream("/assets/pv/collection_skulls.json")?.reader()?.use {
+            JsonParser.parseReader(it).asJsonObject.entrySet().associate { (k, v) -> k to v.asString }
+        } ?: emptyMap()
         val stream = javaClass.getResourceAsStream("/assets/pv/collections.json")
             ?: error("missing collections.json resource")
         val root = stream.reader().use { JsonParser.parseReader(it).asJsonObject }

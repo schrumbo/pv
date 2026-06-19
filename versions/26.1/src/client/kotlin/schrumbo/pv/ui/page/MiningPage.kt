@@ -1,50 +1,49 @@
 package schrumbo.pv.ui.page
 
 import schrumbo.pv.data.MiningData
+import schrumbo.pv.data.SkillTreeRegistry
 import schrumbo.pv.data.SkyblockProfile
 import schrumbo.pv.ui.Theme
 import schrumbo.pv.ui.component.Column
 import schrumbo.pv.ui.component.Component
+import schrumbo.pv.ui.component.Row
 import schrumbo.pv.ui.component.SpaceBetween
 import schrumbo.pv.ui.component.Text
+import schrumbo.pv.ui.component.VAlign
 import schrumbo.pv.util.Format
 
-/** Mining page: powders, Crystal Nucleus state and Glacite progress (no skill level — that's General). */
+/** Mining page: the Heart-of-the-Mountain perk tree, total powder, Crystal Nucleus and Glacite. */
 object MiningPage {
+
+    private const val MITHRIL = 0xFF55FFFF.toInt()
+    private const val GEMSTONE = 0xFFFF66CC.toInt()
+    private const val GLACITE = 0xFFA8D8F0.toInt()
 
     fun build(p: SkyblockProfile, width: Int): Component {
         val m = p.mining
+        val hotm = SkillTreeView.resolve(SkillTreeRegistry.hotm, m.nodes)
+        val grid = SkillTreeView.grid(hotm)
+        // The HOTM tree is narrow; fill the empty space to its right with the (total) powder tiles.
+        val powderW = (width - grid.width - 14).coerceAtLeast(96)
+        val powder = Column(
+            PageKit.tile(powderW, "Total Mithril Powder", Format.compact(m.mithrilTotal), MITHRIL),
+            PageKit.tile(powderW, "Total Gemstone Powder", Format.compact(m.gemstoneTotal), GEMSTONE),
+            PageKit.tile(powderW, "Total Glacite Powder", Format.compact(m.glaciteTotal), GLACITE),
+            PageKit.tile(powderW, "HOTM Tokens", Format.compact(m.tokens)),
+            spacing = 6,
+        )
         return Column(
-            PageKit.pageHeader("Mining", "· ${Format.compact(m.tokens)} HotM tokens", width),
-            PageKit.tileRow(
-                width,
-                listOf(
-                    "Mithril Powder" to (Format.compact(m.mithril) to Theme.ACCENT),
-                    "Gemstone Powder" to (Format.compact(m.gemstone) to Theme.GREEN),
-                    "Glacite Powder" to (Format.compact(m.glacite) to Theme.TEXT),
-                    "HotM Tokens" to (Format.compact(m.tokens) to Theme.GOLD),
-                ),
+            PageKit.skillHeader(p, schrumbo.pv.data.SkillType.MINING, width),
+            PageKit.section(
+                "HEART OF THE MOUNTAIN", width,
+                Row(grid, powder, spacing = 14, align = VAlign.TOP),
+                SkillTreeView.badge(hotm),
             ),
-            PageKit.section("POWDER (TOTAL EARNED)", width, powder(m, width)),
             PageKit.section("CRYSTAL NUCLEUS", width, crystals(m, width)),
             PageKit.section("GLACITE", width, glacite(m, width)),
             spacing = 10,
         )
     }
-
-    private fun powder(m: MiningData, width: Int): Component = Column(
-        powderRow("Mithril", m.mithril, m.mithrilTotal, Theme.ACCENT, width),
-        powderRow("Gemstone", m.gemstone, m.gemstoneTotal, Theme.GREEN, width),
-        powderRow("Glacite", m.glacite, m.glaciteTotal, Theme.TEXT, width),
-        spacing = 3,
-    )
-
-    private fun powderRow(name: String, cur: Long, total: Long, color: Int, width: Int): Component =
-        SpaceBetween(
-            width,
-            Text(name, color),
-            Text("${Format.compact(cur)} §8/ §7${Format.compact(total)} total", Theme.TEXT),
-        )
 
     private fun crystals(m: MiningData, width: Int): Component {
         val cellW = PageKit.cellW(width, 3)

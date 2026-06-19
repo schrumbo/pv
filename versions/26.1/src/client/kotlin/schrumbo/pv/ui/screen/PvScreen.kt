@@ -44,11 +44,22 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
     private var page = Page.GENERAL
     private var dungeonMaster = false
     private var bestiaryIsland = 0
+    private var bestiaryRailScroll = 0
     private var collectionCategory = 0
     private var inventoryTab = 0
+    private var containerPage = 0
 
     private var input = ""
     private var inputFocused = false
+
+    // Hunting page shard search.
+    private var huntingQuery = ""
+    private var huntingFocused = false
+    private var huntingInputRect = intArrayOf(0, 0, 0, 0)
+
+    // Bestiary island rail (scrolls independently of the mob grid when it overflows the panel).
+    private var railRect = intArrayOf(0, 0, 0, 0)
+    private var railMaxScroll = 0
 
     private var cachedEntity: LivingEntity? = null
     private var cachedEntityIndex = -1
@@ -63,6 +74,12 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
     private var mainTfX = 0
     private var mainTfY = 0
     private var mainScale = 1f
+
+    // Vertical scroll offset per page (scrollable pages render at scale 1 and scroll instead of
+    // rescaling when their content — or a sub-page — overflows the panel).
+    private val scrollOffsets = HashMap<Page, Int>()
+    private var curMaxScroll = 0
+    private var contentRect = intArrayOf(0, 0, 0, 0)
 
     init {
         load(target)
@@ -108,6 +125,8 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         val contentY = py + topH + 1 + pad
         val contentW = panelW - pad * 2
         val contentH = (barTop - pad) - contentY
+        contentRect = intArrayOf(contentX, contentY, contentW, contentH)
+        curMaxScroll = 0
         renderContent(context, contentX, contentY, contentW, contentH, mouseX, mouseY)
     }
 
@@ -209,7 +228,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
                 Page.MINING -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> MiningPage.build(p, w) }
                 Page.FISHING -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> FishingPage.build(p, w) }
                 Page.FARMING -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> FarmingPage.build(p, w) }
-                Page.HUNTING -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> HuntingPage.build(p, w) }
+                Page.HUNTING -> renderHunting(ctx, s, x, y, width, height, mouseX, mouseY)
                 Page.FORAGING -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> ForagingPage.build(p, w) }
                 Page.PETS -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> PetsPage.build(p, w) }
                 Page.INVENTORY -> renderInventory(ctx, s, x, y, width, height, mouseX, mouseY)
@@ -243,8 +262,46 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         x: Int, y: Int, width: Int, height: Int, mouseX: Int, mouseY: Int,
     ) {
         val index = profileIndex.coerceIn(0, s.profiles.size - 1)
-        renderScaledFill(ctx, x, y, width, height, mouseX, mouseY) { w, _ ->
-            BestiaryPage.build(s.profiles[index], w, bestiaryIsland) { bestiaryIsland = it }
+        val islands = BestiaryPage.islands(s.profiles[index])
+        if (islands.isEmpty()) {
+            renderScrolled(ctx, x, y, width, height, mouseX, mouseY) { w, _ -> BestiaryPage.header(islands, w) }
+            return
+        }
+        val active = bestiaryIsland.coerceIn(0, islands.size - 1)
+
+        val header = BestiaryPage.header(islands, width)
+        header.render(ctx, x, y, mouseX, mouseY)
+        val bodyY = y + header.height + 8
+        val bodyH = height - header.height - 8
+
+        // Island rail — scrolls on its own when taller than the panel, so every island stays reachable.
+        val rail = BestiaryPage.rail(islands, active) { bestiaryIsland = it; scrollOffsets[Page.BESTIARY] = 0 }
+        railMaxScroll = (rail.height - bodyH).coerceAtLeast(0)
+        bestiaryRailScroll = bestiaryRailScroll.coerceIn(0, railMaxScroll)
+        railRect = intArrayOf(x, bodyY, BestiaryPage.RAIL_W, bodyH)
+
+        val before = ClickRegistry.regions.size
+        ctx.enableScissor(x, bodyY, x + BestiaryPage.RAIL_W, bodyY + bodyH)
+        rail.render(ctx, x, bodyY - bestiaryRailScroll, mouseX, mouseY)
+        ctx.disableScissor()
+        // Drop rail regions scrolled outside the viewport so they can't be clicked through the chrome.
+        val regs = ClickRegistry.regions
+        var i = before
+        while (i < regs.size) {
+            if (regs[i].y + regs[i].h <= bodyY || regs[i].y >= bodyY + bodyH) regs.removeAt(i) else i++
+        }
+        if (railMaxScroll > 0) {
+            val barW = 2
+            val tx = x + BestiaryPage.RAIL_W - barW
+            ctx.fill(tx, bodyY, tx + barW, bodyY + bodyH, Theme.SURFACE_ALT)
+            val thumbH = (bodyH * bodyH / rail.height).coerceIn(12, bodyH)
+            val thumbY = bodyY + (bodyH - thumbH) * bestiaryRailScroll / railMaxScroll
+            ctx.fill(tx, thumbY, tx + barW, thumbY + thumbH, Theme.BORDER)
+        }
+
+        val gx = x + BestiaryPage.RAIL_W + 14
+        renderScrolled(ctx, gx, bodyY, width - BestiaryPage.RAIL_W - 14, bodyH, mouseX, mouseY) { w, _ ->
+            BestiaryPage.grid(islands[active], w)
         }
     }
 
@@ -255,7 +312,34 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         build: (schrumbo.pv.data.SkyblockProfile, Int) -> schrumbo.pv.ui.component.Component,
     ) {
         val index = profileIndex.coerceIn(0, s.profiles.size - 1)
-        renderScaledFill(ctx, x, y, width, height, mouseX, mouseY) { w, _ -> build(s.profiles[index], w) }
+        renderScrolled(ctx, x, y, width, height, mouseX, mouseY) { w, _ -> build(s.profiles[index], w) }
+    }
+
+    private fun renderHunting(
+        ctx: GuiGraphicsExtractor, s: ProfileState.Loaded,
+        x: Int, y: Int, width: Int, height: Int, mouseX: Int, mouseY: Int,
+    ) {
+        val index = profileIndex.coerceIn(0, s.profiles.size - 1)
+        val p = s.profiles[index]
+
+        val header = HuntingPage.header(p, width)
+        header.render(ctx, x, y, mouseX, mouseY)
+        val cy = y + header.height + 6
+
+        // Search bar — filters the shard grid by name (empty = only owned shards).
+        val boxH = 16
+        ctx.fill(x, cy, x + width, cy + boxH, Theme.SURFACE)
+        border(ctx, x, cy, width, boxH, if (huntingFocused) Theme.ACCENT else Theme.BORDER)
+        val blink = huntingFocused && (System.currentTimeMillis() / 500) % 2 == 0L
+        val placeholder = huntingQuery.isEmpty() && !huntingFocused
+        val shown = (if (placeholder) "search attribute / mob / shard…" else huntingQuery) + if (blink) "_" else ""
+        ctx.text(font, shown, x + 5, cy + 4, if (placeholder) Theme.TEXT_MUTED else Theme.TEXT, false)
+        huntingInputRect = intArrayOf(x, cy, width, boxH)
+
+        val bodyY = cy + boxH + 8
+        renderScrolled(ctx, x, bodyY, width, height - (bodyY - y), mouseX, mouseY) { w, _ ->
+            HuntingPage.grid(p, huntingQuery, w)
+        }
     }
 
     private fun renderInventory(
@@ -263,8 +347,25 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         x: Int, y: Int, width: Int, height: Int, mouseX: Int, mouseY: Int,
     ) {
         val index = profileIndex.coerceIn(0, s.profiles.size - 1)
-        renderScaledFill(ctx, x, y, width, height, mouseX, mouseY) { w, _ ->
-            InventoryPage.build(s.profiles[index], w, inventoryTab) { inventoryTab = it }
+        val p = s.profiles[index]
+        if (InventoryPage.isEmpty(p)) {
+            renderScrolled(ctx, x, y, width, height, mouseX, mouseY) { w, _ -> InventoryPage.disabled(w) }
+            return
+        }
+        val active = inventoryTab.coerceIn(0, InventoryPage.entryCount(p) - 1)
+
+        // Fixed rail (never scrolls); clicks resolve at scale 1 — renderScrolled sets that transform.
+        InventoryPage.rail(p, active) { inventoryTab = it; containerPage = 0; scrollOffsets[Page.INVENTORY] = 0 }
+            .render(ctx, x, y, mouseX, mouseY)
+
+        val gx = x + InventoryPage.RAIL_W + 14
+        val gw = width - InventoryPage.RAIL_W - 14
+        val header = InventoryPage.gridHeader(p, active, gw)
+        header.render(ctx, gx, y, mouseX, mouseY)
+
+        val gy = y + header.height + 8
+        renderScrolled(ctx, gx, gy, gw, height - header.height - 8, mouseX, mouseY) { w, _ ->
+            InventoryPage.body(p, active, w, containerPage) { containerPage = it; scrollOffsets[Page.INVENTORY] = 0 }
         }
     }
 
@@ -273,8 +374,23 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         x: Int, y: Int, width: Int, height: Int, mouseX: Int, mouseY: Int,
     ) {
         val index = profileIndex.coerceIn(0, s.profiles.size - 1)
-        renderScaledFill(ctx, x, y, width, height, mouseX, mouseY) { w, _ ->
-            CollectionsPage.build(s.profiles[index], w, collectionCategory) { collectionCategory = it }
+        val cats = CollectionsPage.categories(s.profiles[index])
+        if (cats.isEmpty()) {
+            renderScrolled(ctx, x, y, width, height, mouseX, mouseY) { w, _ -> CollectionsPage.header(cats, w) }
+            return
+        }
+        val active = collectionCategory.coerceIn(0, cats.size - 1)
+
+        val header = CollectionsPage.header(cats, width)
+        header.render(ctx, x, y, mouseX, mouseY)
+        val bodyY = y + header.height + 8
+
+        CollectionsPage.rail(cats, active) { collectionCategory = it; scrollOffsets[Page.COLLECTIONS] = 0 }
+            .render(ctx, x, bodyY, mouseX, mouseY)
+
+        val gx = x + CollectionsPage.RAIL_W + 14
+        renderScrolled(ctx, gx, bodyY, width - CollectionsPage.RAIL_W - 14, height - header.height - 8, mouseX, mouseY) { w, _ ->
+            CollectionsPage.grid(cats[active], w)
         }
     }
 
@@ -285,6 +401,41 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         val index = profileIndex.coerceIn(0, s.profiles.size - 1)
         renderScaledFill(ctx, x, y, width, height, mouseX, mouseY) { w, _ ->
             DungeonsPage.build(s.profiles[index], w, dungeonMaster) { dungeonMaster = it }
+        }
+    }
+
+    /**
+     * Renders a click-aware page at scale 1 inside a scissor-clipped viewport; content taller than
+     * [availH] scrolls vertically via the mouse wheel instead of being rescaled. This keeps a single,
+     * stable scale across a page's sub-pages — switching island/tab/category never resizes anything.
+     */
+    private fun renderScrolled(
+        ctx: GuiGraphicsExtractor, x: Int, y: Int, availW: Int, availH: Int, mouseX: Int, mouseY: Int,
+        build: (Int, Int) -> schrumbo.pv.ui.component.Component,
+    ) {
+        val barGap = 6
+        val content = build(availW - barGap, availH)
+        val maxScroll = (content.height - availH).coerceAtLeast(0)
+        curMaxScroll = maxScroll
+        val off = scrollOffsets.getOrDefault(page, 0).coerceIn(0, maxScroll)
+        scrollOffsets[page] = off
+
+        // Scrollable pages draw at absolute coords (scale 1); clicks need no transform.
+        mainTfX = 0
+        mainTfY = 0
+        mainScale = 1f
+
+        ctx.enableScissor(x, y, x + availW, y + availH)
+        content.render(ctx, x, y - off, mouseX, mouseY)
+        ctx.disableScissor()
+
+        if (maxScroll > 0) {
+            val barW = 3
+            val trackX = x + availW - barW
+            ctx.fill(trackX, y, trackX + barW, y + availH, Theme.SURFACE_ALT)
+            val thumbH = (availH * availH / content.height).coerceIn(14, availH)
+            val thumbY = y + (availH - thumbH) * off / maxScroll
+            ctx.fill(trackX, thumbY, trackX + barW, thumbY + thumbH, Theme.BORDER)
         }
     }
 
@@ -332,12 +483,10 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
     }
 
     override fun charTyped(event: CharacterEvent): Boolean {
-        if (!inputFocused) return false
         val cp = event.codepoint()
-        if (cp >= ' '.code && cp != 127) {
-            input += event.codepointAsString()
-            return true
-        }
+        if (cp < ' '.code || cp == 127) return false
+        if (inputFocused) { input += event.codepointAsString(); return true }
+        if (huntingFocused) { huntingQuery += event.codepointAsString(); scrollOffsets[Page.HUNTING] = 0; return true }
         return false
     }
 
@@ -350,6 +499,13 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
                 else -> return true
             }
         }
+        if (huntingFocused) {
+            when (event.key()) {
+                259 -> { if (huntingQuery.isNotEmpty()) { huntingQuery = huntingQuery.dropLast(1); scrollOffsets[Page.HUNTING] = 0 }; return true }
+                256, 257, 335 -> { huntingFocused = false; return true } // ESCAPE / ENTER
+                else -> return true
+            }
+        }
         return super.keyPressed(event)
     }
 
@@ -359,9 +515,16 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
 
         if (hit(inputRect, mx, my)) {
             inputFocused = true
+            huntingFocused = false
+            return true
+        }
+        if (page == Page.HUNTING && hit(huntingInputRect, mx, my)) {
+            huntingFocused = true
+            inputFocused = false
             return true
         }
         inputFocused = false
+        huntingFocused = false
 
         if (hit(skycryptRect, mx, my)) {
             skyCryptUrl()?.let { Util.getPlatform().openUri(it) }
@@ -378,11 +541,29 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         for ((rect, p) in tabRects) {
             if (hit(rect, mx, my)) { page = p; return true }
         }
-        // Component pages (General, Catacombs) record click regions in the scaled content space.
-        val lmx = ((mx - mainTfX) / mainScale).toInt()
-        val lmy = ((my - mainTfY) / mainScale).toInt()
-        if (ClickRegistry.fire(lmx, lmy)) return true
+        // Page click regions live in the (possibly scaled) content space; only fire when the cursor
+        // is inside the content viewport so regions scrolled under the chrome stay inert.
+        if (hit(contentRect, mx, my)) {
+            val lmx = ((mx - mainTfX) / mainScale).toInt()
+            val lmy = ((my - mainTfY) / mainScale).toInt()
+            if (ClickRegistry.fire(lmx, lmy)) return true
+        }
         return super.mouseClicked(event, doubleClick)
+    }
+
+    override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
+        if (page == Page.BESTIARY && railMaxScroll > 0 && hit(railRect, mouseX.toInt(), mouseY.toInt())) {
+            val step = font.lineHeight * 3
+            bestiaryRailScroll = (bestiaryRailScroll - (scrollY * step).toInt()).coerceIn(0, railMaxScroll)
+            return true
+        }
+        if (curMaxScroll > 0 && hit(contentRect, mouseX.toInt(), mouseY.toInt())) {
+            val step = font.lineHeight * 3
+            val cur = scrollOffsets.getOrDefault(page, 0)
+            scrollOffsets[page] = (cur - (scrollY * step).toInt()).coerceIn(0, curMaxScroll)
+            return true
+        }
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
     }
 
     private fun submit() {
