@@ -20,6 +20,9 @@ interface HypixelDataSource {
 
     /** `GET /v2/player?uuid=` — global player data (network level, etc.). */
     fun player(uuid: String): JsonObject
+
+    /** `GET /v2/skyblock/garden?profile=` — the garden for one profile (shared across co-op). */
+    fun garden(profileId: String): JsonObject
 }
 
 /** Thrown when the rate limiter rejects a call or Hypixel returns HTTP 429. */

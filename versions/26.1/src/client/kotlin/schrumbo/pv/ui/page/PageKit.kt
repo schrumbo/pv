@@ -38,12 +38,14 @@ object PageKit {
         return "$t…"
     }
 
-    /** A page title + value summary line, with a divider underneath. */
-    fun pageHeader(title: String, summary: String, width: Int): Component = Column(
-        Row(Text(title, Theme.TEXT), Text(summary, Theme.TEXT_MUTED), spacing = 6, align = VAlign.CENTER),
-        Box(width, 1, Theme.BORDER),
-        spacing = 4,
-    )
+    /** A floating page title + value summary line (no divider; sections separate via spacing). */
+    fun pageHeader(title: String, summary: String, width: Int): Component {
+        val parts = buildList {
+            if (title.isNotEmpty()) add(Text(title, Theme.TEXT))
+            if (summary.isNotEmpty()) add(Text(summary, Theme.TEXT_MUTED))
+        }
+        return if (parts.isEmpty()) Spacer(0, 0) else Row(parts, spacing = 8, align = VAlign.CENTER)
+    }
 
     /**
      * A skill-page header: the skill name + its (overflow) level, a full-width progress bar, the XP /
@@ -64,7 +66,6 @@ object PageKit {
             ),
             ProgressBar(width, 4, lvl.progress, fg, Theme.SURFACE_ALT),
             if (extra.isEmpty()) Spacer(0, 0) else Text(extra, Theme.TEXT_MUTED),
-            Box(width, 1, Theme.BORDER),
             spacing = 4,
         )
     }
@@ -82,14 +83,14 @@ object PageKit {
         return Row(tiles.map { (k, v) -> tile(w, k, v.first, v.second) }, spacing = gap)
     }
 
-    /** A titled section: label + optional right-aligned badge, divider, then [content]. */
-    fun section(title: String, width: Int, content: Component, badge: Component? = null): Component = Column(
-        SpaceBetween(width, Text(title, Theme.TEXT_MUTED), badge ?: Spacer(0)),
-        Box(width, 1, Theme.BORDER),
-        Spacer(0, 1),
-        content,
-        spacing = 3,
-    )
+    /**
+     * A section group, no label and no divider — separation comes from the caller's spacing.
+     * [title] is kept for call-site readability but no longer rendered; an optional [badge] floats
+     * right above the content when present.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    fun section(title: String, width: Int, content: Component, badge: Component? = null): Component =
+        if (badge != null) Column(SpaceBetween(width, Spacer(0), badge), content, spacing = 3) else content
 
     /** Lays [rows] into [cols] balanced columns. */
     fun grid(rows: List<Component>, width: Int, cols: Int = 2, colGap: Int = 14, rowGap: Int = 5): Component {

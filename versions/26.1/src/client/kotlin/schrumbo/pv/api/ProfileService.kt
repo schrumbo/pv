@@ -1,6 +1,8 @@
 package schrumbo.pv.api
 
 import net.minecraft.client.Minecraft
+import schrumbo.pv.data.GardenData
+import schrumbo.pv.data.GardenMapper
 import schrumbo.pv.data.ProfileMapper
 import schrumbo.pv.data.ProfileState
 import schrumbo.pv.util.HypixelRank
@@ -20,6 +22,14 @@ object ProfileService {
             val state = runCatching { fetch(target) }
                 .getOrElse { ProfileState.Error(it.message ?: "Lookup failed") }
             Minecraft.getInstance().execute { callback(state) }
+        }
+    }
+
+    /** Lazily loads one profile's garden off-thread (a separate endpoint), delivering on the main thread. */
+    fun loadGarden(profileId: String, callback: (GardenData?) -> Unit) {
+        Thread.startVirtualThread {
+            val garden = runCatching { GardenMapper.map(source.garden(profileId)) }.getOrNull()
+            Minecraft.getInstance().execute { callback(garden) }
         }
     }
 

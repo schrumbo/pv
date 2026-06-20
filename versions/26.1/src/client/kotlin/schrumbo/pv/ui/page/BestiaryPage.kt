@@ -48,17 +48,12 @@ object BestiaryPage {
     fun header(islands: List<IslandProgress>, width: Int): Component {
         val maxed = islands.sumOf { it.maxedCount }
         val total = islands.sumOf { it.total }
-        val tiers = islands.sumOf { i -> i.mobs.sumOf { it.tier } }
         val kills = islands.sumOf { i -> i.mobs.sumOf { it.kills } }
-        return Column(
-            Row(
-                Text("Bestiary", Theme.TEXT),
-                Text("· ${Format.compact(kills)} kills · $maxed/$total maxed · $tiers tiers", Theme.TEXT_MUTED),
-                spacing = 6,
-                align = VAlign.CENTER,
-            ),
-            Box(width, 1, Theme.BORDER),
-            spacing = 4,
+        return Row(
+            Text("${Format.compact(kills)} kills", Theme.TEXT_MUTED),
+            Text("$maxed/$total maxed", Theme.TEXT_MUTED),
+            spacing = 14,
+            align = VAlign.CENTER,
         )
     }
 

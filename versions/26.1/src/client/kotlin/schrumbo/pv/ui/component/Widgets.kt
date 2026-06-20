@@ -86,6 +86,24 @@ class Tooltip(private val child: Component, private val lines: List<String>) : C
     }
 }
 
+/**
+ * Renders [base], then [badge] anchored to the top-right corner with a small [inset]. Size matches
+ * [base]; the badge keeps its own hover/tooltip. Used for corner decorations like a pet's held item.
+ */
+class Overlay(
+    private val base: Component,
+    private val badge: Component,
+    private val inset: Int = 0,
+) : Component() {
+    override val width get() = base.width
+    override val height get() = base.height
+
+    override fun render(ctx: GuiGraphicsExtractor, x: Int, y: Int, mouseX: Int, mouseY: Int) {
+        base.render(ctx, x, y, mouseX, mouseY)
+        badge.render(ctx, x + base.width - badge.width - inset, y + inset, mouseX, mouseY)
+    }
+}
+
 /** Draws a raw legacy-formatted string (§ color codes interpreted by the font). */
 class RichText(private val text: String) : Component() {
     override val width get() = font.width(text)

@@ -51,12 +51,12 @@ object PetRegistry {
         heldVanilla = root.getAsJsonObject("heldVanilla")?.entrySet()?.associate { (k, v) -> k to v.asString } ?: emptyMap()
     }
 
-    /** Icon for a pet's held item (PET_ITEM_… skull or vanilla), or empty when unknown. */
+    /** Icon for a pet's held item (PET_ITEM_… skull or vanilla); a name-tag placeholder when unmapped. */
     fun heldIcon(id: String?): ItemStack {
         if (id == null) return ItemStack.EMPTY
-        held[id]?.let { return SkullItems.fromTexture(it) }
-        heldVanilla[id]?.let { return SkullItems.vanilla(it) }
-        return ItemStack.EMPTY
+        held[id]?.let { val s = SkullItems.fromTexture(it); if (!s.isEmpty) return s }
+        heldVanilla[id]?.let { val s = SkullItems.vanilla(it); if (!s.isEmpty) return s }
+        return SkullItems.vanilla("name_tag")
     }
 
     fun level(entry: PetEntry): PetLevel {

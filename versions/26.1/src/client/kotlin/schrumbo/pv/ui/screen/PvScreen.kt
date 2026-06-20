@@ -12,6 +12,7 @@ import net.minecraft.resources.Identifier
 import net.minecraft.world.entity.LivingEntity
 import net.minecraft.world.item.ItemStack
 import schrumbo.pv.api.ProfileService
+import schrumbo.pv.data.GardenData
 import schrumbo.pv.data.ProfileState
 import schrumbo.pv.data.SkillType
 import schrumbo.pv.render.FakePlayer
@@ -81,6 +82,10 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
     private var curMaxScroll = 0
     private var contentRect = intArrayOf(0, 0, 0, 0)
 
+    // Garden is a separate endpoint, fetched lazily the first time the Farming page is opened for a
+    // profile. Key present = already requested; value null = still loading or unavailable.
+    private val gardens = HashMap<String, GardenData?>()
+
     init {
         load(target)
     }
@@ -108,23 +113,25 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         val px = (width - panelW) / 2
         val py = (height - panelH) / 2
 
-        context.fill(px, py, px + panelW, py + panelH, Theme.SURFACE)
-        border(context, px, py, panelW, panelH, Theme.BORDER)
+        // The content panel is only the middle surface — the tabs float above it and the bottom
+        // controls float below it, both on the backdrop (no shared chrome behind them).
+        val topH = 20
+        val botH = 16
+        val floatGap = 6
+        val panelTop = py + topH
+        val panelBottom = py + panelH - botH - floatGap
 
-        val topH = 22
-        val botH = 24
-        tabBar(context, px + 10, py + 3, mouseX, mouseY)
-        context.fill(px, py + topH, px + panelW, py + topH + 1, Theme.BORDER)
+        context.fill(px, panelTop, px + panelW, panelBottom, Theme.SURFACE)
+        border(context, px, panelTop, panelW, panelBottom - panelTop, Theme.BORDER)
 
-        val barTop = py + panelH - botH
-        context.fill(px, barTop, px + panelW, barTop + 1, Theme.BORDER)
-        bottomBar(context, px, barTop + 1, panelW, botH - 1, mouseX, mouseY)
+        tabBar(context, px + 10, py, panelTop, mouseX, mouseY)
+        bottomBar(context, px, panelBottom + floatGap, panelW, botH, mouseX, mouseY)
 
         val pad = 12
         val contentX = px + pad
-        val contentY = py + topH + 1 + pad
+        val contentY = panelTop + pad
         val contentW = panelW - pad * 2
-        val contentH = (barTop - pad) - contentY
+        val contentH = (panelBottom - pad) - contentY
         contentRect = intArrayOf(contentX, contentY, contentW, contentH)
         curMaxScroll = 0
         renderContent(context, contentX, contentY, contentW, contentH, mouseX, mouseY)
@@ -187,25 +194,41 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         return "https://sky.shiiyu.moe/stats/$name/${s.profiles[index].cuteName}"
     }
 
-    private fun tabBar(ctx: GuiGraphicsExtractor, startX: Int, iconY: Int, mouseX: Int, mouseY: Int) {
+    /**
+     * Folder-style tabs from [topY] down to [lineY] (the body's top edge). Every tab shows its icon;
+     * the active tab also shows its label and is filled with the body surface (no bottom border), so it
+     * reads as an open folder that merges into the page. Inactive tabs are raised [SURFACE_ALT] chips.
+     */
+    private fun tabBar(ctx: GuiGraphicsExtractor, startX: Int, topY: Int, lineY: Int, mouseX: Int, mouseY: Int) {
         tabRects.clear()
-        val size = 16
-        val gap = 7
+        val iconSize = 14
+        val padX = 5
+        val gap = 4
+        val tabH = lineY - topY
         var x = startX
         for (p in Page.entries) {
-            val rect = intArrayOf(x, iconY, size, size)
             val active = p == page
+            val labelW = if (active) 3 + font.width(p.title) else 0
+            val tabW = padX * 2 + iconSize + labelW
+            val rect = intArrayOf(x, topY, tabW, tabH)
             val hovered = hit(rect, mouseX, mouseY)
-            ItemRenderUtils.renderItem(ctx, icon(p.icon), x, iconY, 1f)
-            when {
-                active -> ctx.fill(x, iconY + size, x + size, iconY + size + 1, Theme.ACCENT)
-                hovered -> ctx.fill(x, iconY + size, x + size, iconY + size + 1, Theme.BORDER)
-            }
-            if (hovered) {
+
+            // Active tab fills over the body edge (merge); inactive tabs are raised chips.
+            val bottom = if (active) lineY + 1 else lineY
+            ctx.fill(x, topY, x + tabW, bottom, if (active) Theme.SURFACE else if (hovered) Theme.BORDER else Theme.SURFACE_ALT)
+            ctx.fill(x, topY, x + tabW, topY + 1, if (active) Theme.ACCENT else Theme.BORDER)
+            ctx.fill(x, topY, x + 1, lineY, Theme.BORDER)
+            ctx.fill(x + tabW - 1, topY, x + tabW, lineY, Theme.BORDER)
+
+            val iy = topY + (tabH - iconSize) / 2
+            ItemRenderUtils.renderItem(ctx, icon(p.icon), x + padX, iy, iconSize / 16f)
+            if (active) {
+                ctx.text(font, p.title, x + padX + iconSize + 3, topY + (tabH - font.lineHeight) / 2, Theme.TEXT, false)
+            } else if (hovered) {
                 ctx.setComponentTooltipForNextFrame(font, listOf(Component.literal(p.title)), Hover.screenX, Hover.screenY)
             }
             tabRects += rect to p
-            x += size + gap
+            x += tabW + gap
         }
     }
 
@@ -227,7 +250,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
                 Page.COLLECTIONS -> renderCollections(ctx, s, x, y, width, height, mouseX, mouseY)
                 Page.MINING -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> MiningPage.build(p, w) }
                 Page.FISHING -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> FishingPage.build(p, w) }
-                Page.FARMING -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> FarmingPage.build(p, w) }
+                Page.FARMING -> renderFarming(ctx, s, x, y, width, height, mouseX, mouseY)
                 Page.HUNTING -> renderHunting(ctx, s, x, y, width, height, mouseX, mouseY)
                 Page.FORAGING -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> ForagingPage.build(p, w) }
                 Page.PETS -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> PetsPage.build(p, w) }
@@ -303,6 +326,21 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         renderScrolled(ctx, gx, bodyY, width - BestiaryPage.RAIL_W - 14, bodyH, mouseX, mouseY) { w, _ ->
             BestiaryPage.grid(islands[active], w)
         }
+    }
+
+    private fun renderFarming(
+        ctx: GuiGraphicsExtractor, s: ProfileState.Loaded,
+        x: Int, y: Int, width: Int, height: Int, mouseX: Int, mouseY: Int,
+    ) {
+        val index = profileIndex.coerceIn(0, s.profiles.size - 1)
+        val p = s.profiles[index]
+        val pid = p.profileId
+        if (pid.isNotEmpty() && !gardens.containsKey(pid)) {
+            gardens[pid] = null // mark requested before the async call so we only fetch once
+            ProfileService.loadGarden(pid) { g -> gardens[pid] = g }
+        }
+        val garden = gardens[pid]
+        renderScrolled(ctx, x, y, width, height, mouseX, mouseY) { w, _ -> FarmingPage.build(p, garden, w) }
     }
 
     /** Renders a page that needs no per-page state — built from the active profile and width. */

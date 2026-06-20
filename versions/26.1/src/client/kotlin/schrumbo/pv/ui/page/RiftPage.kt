@@ -25,10 +25,15 @@ object RiftPage {
     private const val SLOT = 20
     private const val GAP = 2
 
+    private const val BURGER_TEX =
+        "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvZDMzZGRiOTJjYjZiM2E3OTI4MGI4YmRjZWQ4OTc2YWVhYjEzYTRiZmZlYWVmMmQ0NmQ4MjhiZDkxZGVlMGYzZSJ9fX0="
+    private const val MONTEZUMA_TEX =
+        "ewogICJ0aW1lc3RhbXAiIDogMTY0ODExMzgxMjE5OCwKICAicHJvZmlsZUlkIiA6ICIyYzEwNjRmY2Q5MTc0MjgyODRlM2JmN2ZhYTdlM2UxYSIsCiAgInByb2ZpbGVOYW1lIiA6ICJOYWVtZSIsCiAgInNpZ25hdHVyZVJlcXVpcmVkIiA6IHRydWUsCiAgInRleHR1cmVzIiA6IHsKICAgICJTS0lOIiA6IHsKICAgICAgInVybCIgOiAiaHR0cDovL3RleHR1cmVzLm1pbmVjcmFmdC5uZXQvdGV4dHVyZS9kZjY1NmMwNmU4YTVjYjQ2OTI1NjRlZTIxNzQ4YmRkZWM5ZDc4NWQxODM0Mjg0YWFhMTQzOTYwMWJiYTQ3ZDZiIiwKICAgICAgIm1ldGFkYXRhIiA6IHsKICAgICAgICAibW9kZWwiIDogInNsaW0iCiAgICAgIH0KICAgIH0KICB9Cn0="
+
     fun build(p: SkyblockProfile, width: Int): Component {
         val r = p.rift
         return Column(
-            PageKit.pageHeader("The Rift", "· ${Format.compact(r.motes)} motes", width),
+            PageKit.pageHeader("The Rift", "${Format.compact(r.motes)} motes", width),
             PageKit.tileRow(
                 width,
                 listOf(
@@ -49,13 +54,18 @@ object RiftPage {
     private fun progress(r: RiftData, width: Int): Component {
         val cellW = PageKit.cellW(width, 2)
         val rows = listOf(
-            row(cellW, "Wither Eyes Killed", "${r.witherEyes}"),
-            row(cellW, "Cats Found", "${r.catsFound}"),
-            row(cellW, "Montezuma (Death pet)", if (r.hasMontezuma) "Owned" else "—"),
-            row(cellW, "McGrubber's Burgers", "${r.burgers}/5"),
+            iconRow(cellW, schrumbo.pv.render.SkullItems.fromTexture(BURGER_TEX), "McGrubber's Burgers", "${r.burgers}/5"),
+            iconRow(cellW, schrumbo.pv.render.SkullItems.fromTexture(MONTEZUMA_TEX), "Montezuma (Death pet)", if (r.hasMontezuma) "Owned" else "—"),
         )
         return PageKit.grid(rows, width, cols = 2)
     }
+
+    private fun iconRow(cellW: Int, icon: net.minecraft.world.item.ItemStack, name: String, value: String): Component = Row(
+        Item(icon, 12, tooltip = false),
+        SpaceBetween(cellW - 12 - 5, Text(name, Theme.TEXT), Text(value, Theme.TEXT_MUTED)),
+        spacing = 5,
+        align = VAlign.CENTER,
+    )
 
     /** The eight Rift Gallery timecharms with their vanilla icon (from NEU `RIFT_TROPHY_*` models). */
     private data class Timecharm(val id: String, val name: String, val icon: String)
@@ -111,7 +121,4 @@ object RiftPage {
         val inner: Component = if (stack.isEmpty) Spacer(SLOT - 4, SLOT - 4) else Item(stack, SLOT - 4, tooltip = true, decorations = true)
         return Frame(SLOT, SLOT, inner, Theme.SURFACE_ALT, Theme.BORDER, HAlign.CENTER, VAlign.CENTER)
     }
-
-    private fun row(cellW: Int, name: String, value: String): Component =
-        SpaceBetween(cellW, Text(name, Theme.TEXT), Text(value, Theme.TEXT_MUTED))
 }

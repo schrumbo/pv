@@ -10,7 +10,6 @@ import schrumbo.pv.data.FloorRun
 import schrumbo.pv.data.FloorStat
 import schrumbo.pv.data.SkyblockProfile
 import schrumbo.pv.ui.Theme
-import schrumbo.pv.ui.component.Box
 import schrumbo.pv.ui.component.Clickable
 import schrumbo.pv.ui.component.Column
 import schrumbo.pv.ui.component.Component
@@ -208,13 +207,10 @@ object DungeonsPage {
         )
     }
 
-    private fun section(title: String, badge: Component, width: Int, content: Component): Component = Column(
-        SpaceBetween(width, Text(title, Theme.TEXT_MUTED), badge),
-        Box(width, 1, Theme.BORDER),
-        Spacer(0, 1),
-        content,
-        spacing = 3,
-    )
+    /** A section group, no label/divider — spacing separates blocks; [badge] floats right. */
+    @Suppress("UNUSED_PARAMETER")
+    private fun section(title: String, badge: Component, width: Int, content: Component): Component =
+        Column(SpaceBetween(width, Spacer(0), badge), content, spacing = 3)
 
     private fun icon(name: String): ItemStack {
         val id = Identifier.tryParse(name) ?: return ItemStack.EMPTY

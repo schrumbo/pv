@@ -22,7 +22,9 @@ object ProfileMapper {
         val member = profile.obj("members")?.obj(uuid) ?: return null
         val skills = skills(member)
         val dungeons = dungeons(member)
+        val gpd = member.obj("garden_player_data")
         return SkyblockProfile(
+            profileId = profile.str("profile_id") ?: "",
             cuteName = profile.str("cute_name") ?: "?",
             gameMode = profile.str("game_mode"),
             skyblockLevel = skyblockLevel(member),
@@ -49,6 +51,12 @@ object ProfileMapper {
             purse = (member.obj("currencies")?.num("coin_purse") ?: member.num("coin_purse"))?.toLong() ?: 0L,
             firstJoin = member.obj("profile")?.num("first_join")?.toLong() ?: 0L,
             fairySouls = (member.obj("fairy_soul")?.num("total_collected") ?: member.num("fairy_souls_collected"))?.toInt() ?: 0,
+            greenhouse = GreenhouseData(
+                copper = gpd?.num("copper")?.toInt() ?: 0,
+                larvaConsumed = gpd?.num("larva_consumed")?.toInt() ?: 0,
+                discovered = gpd?.array("discovered_greenhouse_crops")?.mapNotNull { it.asString }?.toSet() ?: emptySet(),
+                analyzed = gpd?.array("analyzed_greenhouse_crops")?.mapNotNull { it.asString }?.toSet() ?: emptySet(),
+            ),
         )
     }
 
@@ -183,10 +191,13 @@ object ProfileMapper {
         return MiningData(
             mithril = mc?.num("powder_mithril")?.toLong() ?: 0L,
             mithrilTotal = mc?.num("powder_mithril_total")?.toLong() ?: 0L,
+            mithrilSpent = mc?.num("powder_spent_mithril")?.toLong() ?: 0L,
             gemstone = mc?.num("powder_gemstone")?.toLong() ?: 0L,
             gemstoneTotal = mc?.num("powder_gemstone_total")?.toLong() ?: 0L,
+            gemstoneSpent = mc?.num("powder_spent_gemstone")?.toLong() ?: 0L,
             glacite = mc?.num("powder_glacite")?.toLong() ?: 0L,
             glaciteTotal = mc?.num("powder_glacite_total")?.toLong() ?: 0L,
+            glaciteSpent = mc?.num("powder_spent_glacite")?.toLong() ?: 0L,
             tokens = mc?.num("tokens")?.toLong() ?: 0L,
             nodes = treeNodes(member, "mining", mc),
             crystals = crystals,

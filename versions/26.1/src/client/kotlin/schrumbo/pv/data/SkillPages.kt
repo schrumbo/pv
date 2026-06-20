@@ -7,17 +7,25 @@ data class CrystalState(val name: String, val state: String)
 data class MiningData(
     val mithril: Long,
     val mithrilTotal: Long,
+    val mithrilSpent: Long,
     val gemstone: Long,
     val gemstoneTotal: Long,
+    val gemstoneSpent: Long,
     val glacite: Long,
     val glaciteTotal: Long,
+    val glaciteSpent: Long,
     val tokens: Long,
     val nodes: Map<String, Int>,
     val crystals: List<CrystalState>,
     val corpses: List<Pair<String, Long>>,
     val fossilsDonated: Int,
     val mineshafts: Long,
-)
+) {
+    /** Powder count the player has "earned" = currently available + already spent in the tree. */
+    val mithrilCount: Long get() = mithril + mithrilSpent
+    val gemstoneCount: Long get() = gemstone + gemstoneSpent
+    val glaciteCount: Long get() = glacite + glaciteSpent
+}
 
 /** One trophy fish with its per-tier catch counts; [total] and [highestTier] are derived. */
 data class TrophyFish(

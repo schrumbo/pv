@@ -1,6 +1,7 @@
 package schrumbo.pv.ui.page
 
 import schrumbo.pv.data.PetEntry
+import schrumbo.pv.data.PetHeldItems
 import schrumbo.pv.data.PetRegistry
 import schrumbo.pv.data.SkyblockProfile
 import schrumbo.pv.ui.Theme
@@ -9,6 +10,7 @@ import schrumbo.pv.ui.component.Component
 import schrumbo.pv.ui.component.Frame
 import schrumbo.pv.ui.component.HAlign
 import schrumbo.pv.ui.component.Item
+import schrumbo.pv.ui.component.Overlay
 import schrumbo.pv.ui.component.Row
 import schrumbo.pv.ui.component.Text
 import schrumbo.pv.ui.component.Tooltip
@@ -33,7 +35,7 @@ object PetsPage {
         )
         val totalXp = p.pets.sumOf { it.exp }.toLong()
         return Column(
-            PageKit.pageHeader("Pets", "· ${p.pets.size} pets · ${petScore(p.pets)} pet score · ${Format.compact(totalXp)} total xp", width),
+            PageKit.pageHeader("Pets", "${p.pets.size} pets    ${petScore(p.pets)} pet score    ${Format.compact(totalXp)} total xp", width),
             grid(sorted, width),
             spacing = 8,
         )
@@ -63,13 +65,20 @@ object PetsPage {
 
     private fun petCell(pet: PetEntry): Component {
         val lvl = PetRegistry.level(pet)
-        val icon = Item(PetRegistry.iconFor(pet), ICON - 2, tooltip = false, corner = lvl.level.toString())
-        val bg = if (pet.active) Theme.SURFACE_ALT else null
-        val border = if (pet.active) Theme.GREEN else null
+        val base = Item(PetRegistry.iconFor(pet), ICON - 2, tooltip = false, corner = lvl.level.toString())
+        // A mini render of the held item over the top-right corner of the pet (incl. custom skulls).
+        val held = PetRegistry.heldIcon(pet.heldItem)
+        val icon: Component = if (!held.isEmpty) Overlay(base, Item(held, 9, tooltip = false)) else base
+
+        val tierColor = TIER_COLORS[pet.tier] ?: Theme.TEXT
+        val bg = (tierColor and 0x00FFFFFF) or 0x33000000
+        val border = if (pet.active) Theme.GREEN else tierColor
         val cell = Frame(ICON, ICON, icon, bg, border, HAlign.CENTER, VAlign.CENTER)
+
         val name = PetRegistry.displayName(pet.type)
         val heldLine = pet.heldItem?.let {
-            "§7Held: §f" + it.removePrefix("PET_ITEM_").split('_').joinToString(" ") { w -> w.replaceFirstChar { c -> c.uppercase() } }
+            val h = PetHeldItems.resolve(it)
+            "§7Held: ${h.rarityCode}${h.name}"
         }
         return Tooltip(
             cell,

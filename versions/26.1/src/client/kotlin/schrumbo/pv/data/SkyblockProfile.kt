@@ -53,6 +53,7 @@ data class SlayerEntry(val type: SlayerType, val level: Leveling.Level, val tier
  * Catacombs level, all skills with the overflow skill average, and slayers.
  */
 data class SkyblockProfile(
+    val profileId: String,
     val cuteName: String,
     val gameMode: String?,
     val skyblockLevel: Leveling.Level,
@@ -79,4 +80,5 @@ data class SkyblockProfile(
     val purse: Long,
     val firstJoin: Long,
     val fairySouls: Int,
+    val greenhouse: GreenhouseData,
 )

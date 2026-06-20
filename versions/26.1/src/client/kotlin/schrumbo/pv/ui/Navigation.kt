@@ -9,17 +9,17 @@ import schrumbo.pv.data.SkillType
  */
 enum class Page(val title: String, val icon: String) {
     GENERAL("General", "paper"),
-    BESTIARY("Bestiary", "zombie_head"),
     MINING("Mining", "netherite_pickaxe"),
     FORAGING("Foraging", "netherite_axe"),
     FARMING("Farming", "diamond_hoe"),
     FISHING("Fishing", "fishing_rod"),
     HUNTING("Hunting", "lead"),
-    CATACOMBS("Catacombs", "dead_bush"),
+    BESTIARY("Bestiary", "zombie_head"),
+    CATACOMBS("Catacombs", "wither_skeleton_skull"),
+    RIFT("Rift", "ender_eye"),
     INVENTORY("Loadout", "shulker_box"),
     COLLECTIONS("Collections", "item_frame"),
-    PETS("Pets", "bone"),
-    RIFT("Rift", "ender_eye");
+    PETS("Pets", "bone");
 
     companion object {
         /** The dedicated page for a skill, or null for skills that don't get their own category. */

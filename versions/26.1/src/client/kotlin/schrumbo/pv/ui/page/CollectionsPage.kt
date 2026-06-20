@@ -38,15 +38,11 @@ object CollectionsPage {
         val maxed = cats.sumOf { it.maxedCount }
         val total = cats.sumOf { it.total }
         val collected = cats.sumOf { c -> c.items.sumOf { it.amount } }
-        return Column(
-            Row(
-                Text("Collections", Theme.TEXT),
-                Text("· ${Format.compact(collected)} collected · $maxed/$total maxed", Theme.TEXT_MUTED),
-                spacing = 6,
-                align = VAlign.CENTER,
-            ),
-            Box(width, 1, Theme.BORDER),
-            spacing = 4,
+        return Row(
+            Text("${Format.compact(collected)} collected", Theme.TEXT_MUTED),
+            Text("$maxed/$total maxed", Theme.TEXT_MUTED),
+            spacing = 14,
+            align = VAlign.CENTER,
         )
     }
 
@@ -131,8 +127,8 @@ object CollectionsPage {
         "CLAY_BALL" to "clay_ball", "WATER_LILY" to "lily_pad", "INK_SACK" to "ink_sac", "SPONGE" to "sponge",
         "MAGMA_FISH" to "pufferfish",
         // Rift
-        "AGARICUS_CAP" to "brown_mushroom", "CADUCOUS_STEM" to "warped_stem", "HALF_EATEN_CARROT" to "golden_carrot",
-        "HEMOVIBE" to "amethyst_shard", "METAL_HEART" to "heart_of_the_sea", "TIMITE" to "nether_star",
+        "AGARICUS_CAP" to "brown_mushroom", "CADUCOUS_STEM" to "warped_roots", "HALF_EATEN_CARROT" to "golden_carrot",
+        "HEMOVIBE" to "redstone_ore", "METAL_HEART" to "heart_of_the_sea", "TIMITE" to "nether_star",
         "WILTED_BERBERIS" to "dead_bush",
         // Galatea / misc flora
         "MOONFLOWER" to "lily_of_the_valley", "WILD_ROSE" to "poppy", "DOUBLE_PLANT" to "sunflower",

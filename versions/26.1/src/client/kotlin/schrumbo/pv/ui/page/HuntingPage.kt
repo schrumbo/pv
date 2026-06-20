@@ -72,15 +72,15 @@ object HuntingPage {
             spacing = 2,
         )
         val cell = Row(Item(AttributeRegistry.icon(e.def), 16, tooltip = false), body, spacing = 5, align = VAlign.CENTER)
-        val progress = if (e.maxed) "§6Maxed" else "§7To max: §f${e.syphoned}§7/§f${e.def.max} shards"
+        val needed = if (e.maxed) "§6Maxed" else "§7Need §f${e.needed - e.into}§7 more ${e.def.shardName} to level up"
         return Tooltip(
             cell,
             listOf(
                 "${rarityHex(e.def.rarity)}${e.def.name}",
                 "§7${e.def.rarity.lowercase().replaceFirstChar { it.uppercase() }} · ${e.def.category}",
                 "§7Shard: §f${e.def.shardName}",
-                "§7Level §f${e.level}§7/§f10  §8(${e.syphoned} syphoned)",
-                progress,
+                "§7Level §f${e.level}§7/§f10",
+                needed,
             ),
         )
     }

@@ -12,7 +12,6 @@ import schrumbo.pv.data.SkyblockProfile
 import schrumbo.pv.data.SlayerEntry
 import schrumbo.pv.ui.Page
 import schrumbo.pv.ui.Theme
-import schrumbo.pv.ui.component.Box
 import schrumbo.pv.ui.component.Card
 import schrumbo.pv.ui.component.Clickable
 import schrumbo.pv.ui.component.Column
@@ -36,6 +35,8 @@ object GeneralPage {
 
     const val SIDE_WIDTH = 150
     const val GAP = 12
+    private const val FAIRY_SOUL_MAX = 248
+    private const val MAX_GROUP_GAP = 8
     private const val COL_GAP = 16
     private const val XP_WIDTH = 40
     private const val XP_GAP = 5
@@ -62,18 +63,14 @@ object GeneralPage {
         return fillHeight(blocks, base = 8, target = height)
     }
 
-    /** Stacks [blocks] and, when shorter than [target], spreads the slack evenly across the gaps. */
+    /** Stacks [blocks] with a modest gap; when shorter than [target] the gap grows only up to a cap
+     *  (the rest of the slack stays at the bottom) so groupings don't drift far apart. */
     private fun fillHeight(blocks: List<Component>, base: Int, target: Int): Component {
         val natural = blocks.sumOf { it.height } + base * (blocks.size - 1).coerceAtLeast(0)
         if (blocks.size < 2 || target <= natural) return Column(blocks, spacing = base)
         val gaps = blocks.size - 1
-        val slack = target - natural
-        val children = mutableListOf<Component>()
-        blocks.forEachIndexed { i, b ->
-            children += b
-            if (i < gaps) children += Spacer(0, base + slack / gaps + if (i < slack % gaps) 1 else 0)
-        }
-        return Column(children, spacing = 0)
+        val extra = ((target - natural) / gaps).coerceAtMost(MAX_GROUP_GAP)
+        return Column(blocks, spacing = base + extra)
     }
 
     /** Right column: player render on top, profile info board below — both share surface + border. */
@@ -94,16 +91,13 @@ object GeneralPage {
     private fun infoPanel(state: ProfileState.Loaded, p: SkyblockProfile): Component {
         val w = SIDE_WIDTH - 12
         val content = Column(
-            Text("PROFILE", Theme.TEXT_MUTED),
-            Box(w, 1, Theme.BORDER),
-            Spacer(0, 1),
             infoRow(w, "Mode", p.gameMode?.replaceFirstChar { it.uppercase() } ?: "Classic", Theme.TEXT),
             infoRow(w, "Hypixel", state.hypixelLevel?.toString() ?: "?", Theme.TEXT),
             infoRow(w, "Guild", state.guild ?: "—", Theme.TEXT),
             infoRow(w, "Bank", Format.compact(p.bank), Theme.GOLD),
             infoRow(w, "Purse", Format.compact(p.purse), Theme.GOLD),
             infoRow(w, "Created", Format.date(p.firstJoin), Theme.TEXT),
-            infoRow(w, "Fairy Souls", p.fairySouls.toString(), Theme.TEXT),
+            infoRow(w, "Fairy Souls", "${p.fairySouls}/$FAIRY_SOUL_MAX", Theme.TEXT),
             spacing = 2,
         )
         return Card(content, padding = 6, background = Theme.SURFACE_ALT, borderColor = Theme.BORDER)
@@ -243,13 +237,11 @@ object GeneralPage {
         )
     }
 
-    private fun section(title: String, badge: String?, width: Int, content: Component): Component = Column(
-        SpaceBetween(width, Text(title, Theme.TEXT_MUTED), badge?.let { Text(it, Theme.ACCENT) } ?: Spacer(0)),
-        Box(width, 1, Theme.BORDER),
-        Spacer(0, 1),
-        content,
-        spacing = 3,
-    )
+    /** A section group, no label/divider — spacing separates blocks; an optional [badge] floats right. */
+    @Suppress("UNUSED_PARAMETER")
+    private fun section(title: String, badge: String?, width: Int, content: Component): Component =
+        if (badge != null) Column(SpaceBetween(width, Spacer(0), Text(badge, Theme.ACCENT)), content, spacing = 3)
+        else content
 
     private fun icon(name: String): ItemStack {
         val id = Identifier.tryParse(name) ?: return ItemStack.EMPTY

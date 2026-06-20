@@ -8,11 +8,14 @@ import schrumbo.pv.data.TrophyFish
 import schrumbo.pv.ui.Theme
 import schrumbo.pv.ui.component.Column
 import schrumbo.pv.ui.component.Component
+import schrumbo.pv.ui.component.Frame
+import schrumbo.pv.ui.component.HAlign
 import schrumbo.pv.ui.component.Item
 import schrumbo.pv.ui.component.Row
 import schrumbo.pv.ui.component.Spacer
 import schrumbo.pv.ui.component.Text
 import schrumbo.pv.ui.component.Tooltip
+import schrumbo.pv.ui.component.VAlign
 import schrumbo.pv.util.Format
 
 /** Fishing page: trophy-fish heads (per tier, count as stack size) and fishing stats. */
@@ -28,11 +31,12 @@ object FishingPage {
 
     fun build(p: SkyblockProfile, width: Int): Component {
         val t = p.trophy
+        val fishBlock = fish(t)
         return Column(
             PageKit.skillHeader(p, SkillType.FISHING, width),
-            PageKit.section("TROPHY FISH", width, fish(t)),
-            PageKit.section("STATS", width, stats(t, width)),
-            spacing = 10,
+            Frame(width, fishBlock.height, fishBlock, hAlign = HAlign.CENTER, vAlign = VAlign.TOP),
+            stats(t, width),
+            spacing = 8,
         )
     }
 

@@ -28,6 +28,8 @@ object DirectKeyClient : HypixelDataSource {
 
     override fun player(uuid: String): JsonObject = get("/v2/player", "uuid", uuid)
 
+    override fun garden(profileId: String): JsonObject = get("/v2/skyblock/garden", "profile", profileId)
+
     private fun get(path: String, paramName: String, paramValue: String): JsonObject {
         val key = Secrets.hypixelKey
             ?: throw HypixelException("No Hypixel API key configured (config/pv-secrets.properties).")
