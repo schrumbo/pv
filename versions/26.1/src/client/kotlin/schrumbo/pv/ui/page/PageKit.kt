@@ -8,15 +8,18 @@ import schrumbo.pv.data.SkillType
 import schrumbo.pv.data.SkyblockProfile
 import schrumbo.pv.ui.Theme
 import schrumbo.pv.ui.component.Box
+import schrumbo.pv.ui.component.Clickable
 import schrumbo.pv.ui.component.Column
 import schrumbo.pv.ui.component.Component
 import schrumbo.pv.ui.component.Frame
 import schrumbo.pv.ui.component.HAlign
+import schrumbo.pv.ui.component.Item
 import schrumbo.pv.ui.component.ProgressBar
 import schrumbo.pv.ui.component.Row
 import schrumbo.pv.ui.component.SpaceBetween
 import schrumbo.pv.ui.component.Spacer
 import schrumbo.pv.ui.component.Text
+import schrumbo.pv.ui.component.Tooltip
 import schrumbo.pv.ui.component.VAlign
 import schrumbo.pv.util.Format
 
@@ -68,6 +71,28 @@ object PageKit {
             if (extra.isEmpty()) Spacer(0, 0) else Text(extra, Theme.TEXT_MUTED),
             spacing = 4,
         )
+    }
+
+    const val RAIL_ROW_H = 18
+
+    /**
+     * An icon-only side-rail bookmark: the active entry blends into the content surface and is marked
+     * by an accent left bar over a [SURFACE_ALT] highlight; inactive entries are bare icons. No border
+     * (so no boxed outline). The [label] shows as a tooltip on hover.
+     */
+    fun bookmark(width: Int, icon: ItemStack, label: String, active: Boolean, onClick: () -> Unit): Component {
+        val inner = Row(
+            Box(2, RAIL_ROW_H - 6, if (active) Theme.ACCENT else null),
+            Item(icon, 14, tooltip = false),
+            spacing = 3,
+            align = VAlign.CENTER,
+        )
+        val frame = Frame(
+            width, RAIL_ROW_H, Row(Spacer(2), inner),
+            if (active) Theme.SURFACE_ALT else null, null,
+            HAlign.START, VAlign.CENTER,
+        )
+        return Clickable(Tooltip(frame, listOf(label)), hoverFill = Theme.HOVER, onClick = onClick)
     }
 
     /** A bordered key/value tile (label on top, value below). */

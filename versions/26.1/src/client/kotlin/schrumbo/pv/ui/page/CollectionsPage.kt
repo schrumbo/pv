@@ -9,12 +9,8 @@ import schrumbo.pv.data.CollectionTier
 import schrumbo.pv.data.CollectionsRegistry
 import schrumbo.pv.data.SkyblockProfile
 import schrumbo.pv.ui.Theme
-import schrumbo.pv.ui.component.Box
-import schrumbo.pv.ui.component.Clickable
 import schrumbo.pv.ui.component.Column
 import schrumbo.pv.ui.component.Component
-import schrumbo.pv.ui.component.Frame
-import schrumbo.pv.ui.component.HAlign
 import schrumbo.pv.ui.component.Item
 import schrumbo.pv.ui.component.ProgressBar
 import schrumbo.pv.ui.component.Row
@@ -28,9 +24,8 @@ import schrumbo.pv.util.Format
 /** Collections page: a fixed left category rail and the selected category's collections, scrolling. */
 object CollectionsPage {
 
-    const val RAIL_W = 110
+    const val RAIL_W = 22
     private const val COL_GAP = 14
-    private const val ROW_H = 14
 
     fun categories(p: SkyblockProfile): List<CategoryProgress> = CollectionsRegistry.resolve(p.collections)
 
@@ -49,18 +44,8 @@ object CollectionsPage {
     fun rail(cats: List<CategoryProgress>, active: Int, onCategory: (Int) -> Unit): Component =
         Column(cats.mapIndexed { i, cat -> categoryRow(cat, i == active) { onCategory(i) } }, spacing = 1)
 
-    private fun categoryRow(cat: CategoryProgress, active: Boolean, onClick: () -> Unit): Component {
-        val color = if (active) Theme.ACCENT else Theme.TEXT_MUTED
-        val row = Row(
-            Box(2, 11, if (active) Theme.ACCENT else null),
-            Item(icon(cat.def.icon), 11, tooltip = false),
-            Text(cat.def.name, color),
-            spacing = 4,
-            align = VAlign.CENTER,
-        )
-        val frame = Frame(RAIL_W, ROW_H, row, if (active) Theme.SURFACE_ALT else null, null, HAlign.START, VAlign.CENTER)
-        return Clickable(frame, hoverFill = Theme.HOVER, onClick = onClick)
-    }
+    private fun categoryRow(cat: CategoryProgress, active: Boolean, onClick: () -> Unit): Component =
+        PageKit.bookmark(RAIL_W, icon(cat.def.icon), cat.def.name, active, onClick)
 
     fun grid(cat: CategoryProgress, width: Int): Component {
         val cellW = (width - COL_GAP) / 2

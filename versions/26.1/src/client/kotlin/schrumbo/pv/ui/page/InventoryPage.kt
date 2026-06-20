@@ -5,7 +5,6 @@ import schrumbo.pv.data.NamedContainer
 import schrumbo.pv.data.SkyblockProfile
 import schrumbo.pv.ui.Theme
 import schrumbo.pv.ui.component.Box
-import schrumbo.pv.ui.component.Clickable
 import schrumbo.pv.ui.component.Column
 import schrumbo.pv.ui.component.Component
 import schrumbo.pv.ui.component.Frame
@@ -24,10 +23,9 @@ import schrumbo.pv.ui.component.VAlign
  */
 object InventoryPage {
 
-    const val RAIL_W = 128
+    const val RAIL_W = 22
     private const val SLOT = 20
     private const val GAP = 2
-    private const val ROW_H = 16
     private const val GRID_W = 9 * SLOT + 8 * GAP
 
     private val ICONS = mapOf(
@@ -70,7 +68,6 @@ object InventoryPage {
         Column(entries(p).mapIndexed { i, e -> railRow(e, i == active) { onTab(i) } }, spacing = 1)
 
     private fun railRow(e: Entry, active: Boolean, onClick: () -> Unit): Component {
-        val color = if (active) Theme.ACCENT else Theme.TEXT_MUTED
         val iconId = when (e) {
             LoadoutEntry -> "diamond_chestplate"
             is StorageEntry -> "ender_chest"
@@ -81,16 +78,8 @@ object InventoryPage {
             is StorageEntry -> (e.ec?.items?.count { !it.isEmpty } ?: 0) + (e.bp?.items?.count { !it.isEmpty } ?: 0)
             is SingleEntry -> e.c.items.count { !it.isEmpty }
         }
-        val innerW = RAIL_W - 2 - 11 - 4 * 2 - 6
-        val label: Component = if (count == null) Text(e.title, color)
-        else SpaceBetween(innerW, Text(PageKit.clip(e.title, innerW - 18), color), Text("$count", color))
-        val row = Row(
-            Box(2, 11, if (active) Theme.ACCENT else null),
-            Item(PageKit.icon(iconId), 11, tooltip = false),
-            label,
-            spacing = 4, align = VAlign.CENTER,
-        )
-        return Clickable(Frame(RAIL_W, ROW_H, row, if (active) Theme.SURFACE_ALT else null, null, HAlign.START, VAlign.CENTER), hoverFill = Theme.HOVER, onClick = onClick)
+        val label = if (count != null) "${e.title}  ($count)" else e.title
+        return PageKit.bookmark(RAIL_W, PageKit.icon(iconId), label, active, onClick)
     }
 
     fun gridHeader(p: SkyblockProfile, active: Int, width: Int): Component = when (val e = entries(p)[active]) {

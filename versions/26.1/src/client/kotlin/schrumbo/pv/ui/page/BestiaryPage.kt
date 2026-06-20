@@ -9,17 +9,12 @@ import schrumbo.pv.data.IslandProgress
 import schrumbo.pv.data.MobTier
 import schrumbo.pv.data.SkyblockProfile
 import schrumbo.pv.ui.Theme
-import schrumbo.pv.ui.component.Box
-import schrumbo.pv.ui.component.Clickable
 import schrumbo.pv.ui.component.Column
 import schrumbo.pv.ui.component.Component
-import schrumbo.pv.ui.component.Frame
-import schrumbo.pv.ui.component.HAlign
 import schrumbo.pv.ui.component.Item
 import schrumbo.pv.ui.component.ProgressBar
 import schrumbo.pv.ui.component.Row
 import schrumbo.pv.ui.component.SpaceBetween
-import schrumbo.pv.ui.component.Spacer
 import schrumbo.pv.ui.component.Text
 import schrumbo.pv.ui.component.Tooltip
 import schrumbo.pv.ui.component.VAlign
@@ -28,9 +23,8 @@ import schrumbo.pv.util.Format
 /** Bestiary page: a fixed left island rail and the selected island's mob tiers as a scrolling grid. */
 object BestiaryPage {
 
-    const val RAIL_W = 120
+    const val RAIL_W = 22
     private const val COL_GAP = 14
-    private const val ROW_H = 12
 
     /** Representative vanilla icon per island key, shown in the left rail. */
     private val ISLAND_ICONS = mapOf(
@@ -60,19 +54,8 @@ object BestiaryPage {
     fun rail(islands: List<IslandProgress>, active: Int, onIsland: (Int) -> Unit): Component =
         Column(islands.mapIndexed { i, island -> islandRow(island, i == active) { onIsland(i) } }, spacing = 1)
 
-    private fun islandRow(island: IslandProgress, active: Boolean, onClick: () -> Unit): Component {
-        val color = if (active) Theme.ACCENT else Theme.TEXT_MUTED
-        val row = Row(
-            Box(2, 11, if (active) Theme.ACCENT else null),
-            Item(icon(ISLAND_ICONS[island.def.key] ?: "paper"), 11, tooltip = false),
-            // Spacer above nudges the label down 1px so it sits centred against the icon glyph.
-            Column(Spacer(0, 2), Text(clip(island.def.name, RAIL_W - 26), color), spacing = 0),
-            spacing = 4,
-            align = VAlign.CENTER,
-        )
-        val frame = Frame(RAIL_W, ROW_H, row, if (active) Theme.SURFACE_ALT else null, null, HAlign.START, VAlign.CENTER)
-        return Clickable(frame, hoverFill = Theme.HOVER, onClick = onClick)
-    }
+    private fun islandRow(island: IslandProgress, active: Boolean, onClick: () -> Unit): Component =
+        PageKit.bookmark(RAIL_W, icon(ISLAND_ICONS[island.def.key] ?: "paper"), island.def.name, active, onClick)
 
     fun grid(island: IslandProgress, width: Int): Component {
         val cellW = (width - COL_GAP) / 2

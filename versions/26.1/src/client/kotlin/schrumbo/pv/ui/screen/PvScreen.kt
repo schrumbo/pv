@@ -108,13 +108,14 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         ClickRegistry.reset()
         context.fill(0, 0, width, height, Theme.BACKDROP)
 
-        val panelW = minOf(width - 40, 760)
-        val panelH = minOf(height - 40, 480)
+        val panelW = minOf(width - 40, 680)
+        val panelH = minOf(height - 40, 430)
         val px = (width - panelW) / 2
         val py = (height - panelH) / 2
 
-        // The content panel is only the middle surface — the tabs float above it and the bottom
-        // controls float below it, both on the backdrop (no shared chrome behind them).
+        // Main category tabs run across the TOP; the content panel is the surface below them and the
+        // bottom controls float under it (both on the backdrop, no shared chrome behind them). The left
+        // edge of the content is reserved for per-page sub-category bookmarks (rails).
         val topH = 20
         val botH = 16
         val floatGap = 6
@@ -195,9 +196,9 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
     }
 
     /**
-     * Folder-style tabs from [topY] down to [lineY] (the body's top edge). Every tab shows its icon;
-     * the active tab also shows its label and is filled with the body surface (no bottom border), so it
-     * reads as an open folder that merges into the page. Inactive tabs are raised [SURFACE_ALT] chips.
+     * Main-category folder tabs across the top from [topY] down to [lineY] (the body's top edge). Every
+     * tab shows its icon; the active tab also shows its label and fills the body surface (no bottom
+     * border) so it reads as an open folder merging into the page. Inactive tabs are raised chips.
      */
     private fun tabBar(ctx: GuiGraphicsExtractor, startX: Int, topY: Int, lineY: Int, mouseX: Int, mouseY: Int) {
         tabRects.clear()
@@ -275,7 +276,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         val onCatacombs: () -> Unit = { page = Page.CATACOMBS }
 
         val mainW = width - GeneralPage.SIDE_WIDTH - GeneralPage.GAP
-        renderScaledFill(ctx, x, y, mainW, height, mouseX, mouseY) { w, h ->
+        renderScrolled(ctx, x, y, mainW, height, mouseX, mouseY) { w, h ->
             GeneralPage.main(s, index, w, h, onSkill, onCatacombs)
         }
     }
@@ -322,8 +323,8 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
             ctx.fill(tx, thumbY, tx + barW, thumbY + thumbH, Theme.BORDER)
         }
 
-        val gx = x + BestiaryPage.RAIL_W + 14
-        renderScrolled(ctx, gx, bodyY, width - BestiaryPage.RAIL_W - 14, bodyH, mouseX, mouseY) { w, _ ->
+        val gx = x + BestiaryPage.RAIL_W + 8
+        renderScrolled(ctx, gx, bodyY, width - BestiaryPage.RAIL_W - 8, bodyH, mouseX, mouseY) { w, _ ->
             BestiaryPage.grid(islands[active], w)
         }
     }
@@ -396,8 +397,8 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         InventoryPage.rail(p, active) { inventoryTab = it; containerPage = 0; scrollOffsets[Page.INVENTORY] = 0 }
             .render(ctx, x, y, mouseX, mouseY)
 
-        val gx = x + InventoryPage.RAIL_W + 14
-        val gw = width - InventoryPage.RAIL_W - 14
+        val gx = x + InventoryPage.RAIL_W + 8
+        val gw = width - InventoryPage.RAIL_W - 8
         val header = InventoryPage.gridHeader(p, active, gw)
         header.render(ctx, gx, y, mouseX, mouseY)
 
@@ -426,8 +427,8 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         CollectionsPage.rail(cats, active) { collectionCategory = it; scrollOffsets[Page.COLLECTIONS] = 0 }
             .render(ctx, x, bodyY, mouseX, mouseY)
 
-        val gx = x + CollectionsPage.RAIL_W + 14
-        renderScrolled(ctx, gx, bodyY, width - CollectionsPage.RAIL_W - 14, height - header.height - 8, mouseX, mouseY) { w, _ ->
+        val gx = x + CollectionsPage.RAIL_W + 8
+        renderScrolled(ctx, gx, bodyY, width - CollectionsPage.RAIL_W - 8, height - header.height - 8, mouseX, mouseY) { w, _ ->
             CollectionsPage.grid(cats[active], w)
         }
     }
@@ -437,7 +438,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         x: Int, y: Int, width: Int, height: Int, mouseX: Int, mouseY: Int,
     ) {
         val index = profileIndex.coerceIn(0, s.profiles.size - 1)
-        renderScaledFill(ctx, x, y, width, height, mouseX, mouseY) { w, _ ->
+        renderScrolled(ctx, x, y, width, height, mouseX, mouseY) { w, _ ->
             DungeonsPage.build(s.profiles[index], w, dungeonMaster) { dungeonMaster = it }
         }
     }
@@ -475,35 +476,6 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
             val thumbY = y + (availH - thumbH) * off / maxScroll
             ctx.fill(trackX, thumbY, trackX + barW, thumbY + thumbH, Theme.BORDER)
         }
-    }
-
-    /**
-     * Renders a click-aware page so it fills [availW]×[availH]. The page is built once; if it's
-     * taller than [availH] it's rebuilt at a proportionally wider logical width and then scaled down
-     * uniformly — so the down-scale fills the width instead of leaving an empty strip on the right.
-     */
-    private fun renderScaledFill(
-        ctx: GuiGraphicsExtractor, x: Int, y: Int, availW: Int, availH: Int, mouseX: Int, mouseY: Int,
-        build: (Int, Int) -> schrumbo.pv.ui.component.Component,
-    ) {
-        var content = build(availW, availH)
-        var scale = 1f
-        if (content.height > availH) {
-            val first = availH.toFloat() / content.height
-            content = build((availW / first).toInt().coerceAtLeast(availW), availH)
-            scale = availH.toFloat() / content.height
-        }
-        mainTfX = x
-        mainTfY = y
-        mainScale = scale
-
-        ctx.pose().pushMatrix()
-        ctx.pose().translate(x.toFloat(), y.toFloat())
-        if (scale < 1f) ctx.pose().scale(scale, scale)
-        val lmx = ((mouseX - x) / scale).toInt()
-        val lmy = ((mouseY - y) / scale).toInt()
-        content.render(ctx, 0, 0, lmx, lmy)
-        ctx.pose().popMatrix()
     }
 
     private fun placeholder(ctx: GuiGraphicsExtractor, title: String, x: Int, y: Int, width: Int, height: Int) {

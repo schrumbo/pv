@@ -5,8 +5,8 @@ import net.minecraft.client.gui.screens.inventory.InventoryScreen
 import net.minecraft.world.entity.LivingEntity
 
 /**
- * Draws a 3D [entity] (centered, looking forward) inside a bordered slot, with an optional
- * floating [nametag] (raw §-formatted) above the head like an in-world name tag.
+ * Draws a 3D [entity] inside a bordered slot, with an optional floating [nametag] above the head.
+ * The model looks toward the cursor (it follows the mouse like the in-game inventory view).
  */
 class PlayerRender(
     override val width: Int,
@@ -27,10 +27,8 @@ class PlayerRender(
         val x1 = x + width - pad
         val y1 = y + height - pad - font.lineHeight
         val scale = ((y1 - y0) * 0.40f).toInt().coerceAtLeast(10)
-        val cx = (x0 + x1) / 2f
-        val cy = (y0 + y1) / 2f
         InventoryScreen.extractEntityInInventoryFollowsMouse(
-            ctx, x0, y0, x1, y1, scale, 0f, cx, cy, entity,
+            ctx, x0, y0, x1, y1, scale, 0f, mouseX.toFloat(), mouseY.toFloat(), entity,
         )
 
         nametag?.let { ctx.text(font, it, x + (width - font.width(it)) / 2, y + pad, 0xFFFFFFFF.toInt(), true) }
