@@ -44,7 +44,7 @@ object PageKit {
     /** A floating page title + value summary line (no divider; sections separate via spacing). */
     fun pageHeader(title: String, summary: String, width: Int): Component {
         val parts = buildList {
-            if (title.isNotEmpty()) add(Text(title, Theme.TEXT))
+            if (title.isNotEmpty()) add(Text(title, Theme.TEXT, scale = Text.SUBTITLE))
             if (summary.isNotEmpty()) add(Text(summary, Theme.TEXT_MUTED))
         }
         return if (parts.isEmpty()) Spacer(0, 0) else Row(parts, spacing = 8, align = VAlign.CENTER)
@@ -64,7 +64,7 @@ object PageKit {
         return Column(
             SpaceBetween(
                 width,
-                Row(Text(type.display, Theme.TEXT), Text(levelText, fg), spacing = 6, align = VAlign.CENTER),
+                Row(Text(type.display, Theme.TEXT, scale = Text.SUBTITLE), Text(levelText, fg), spacing = 6, align = VAlign.CENTER),
                 Text(right, Theme.TEXT_MUTED),
             ),
             ProgressBar(width, 4, lvl.progress, fg, Theme.SURFACE_ALT),
@@ -95,9 +95,9 @@ object PageKit {
         return Clickable(Tooltip(frame, listOf(label)), hoverFill = Theme.HOVER, onClick = onClick)
     }
 
-    /** A bordered key/value tile (label on top, value below). */
+    /** A bordered key/value tile (small caption on top, value below). */
     fun tile(w: Int, key: String, value: String, valueColor: Int = Theme.TEXT): Component {
-        val content = Column(Text(key, Theme.TEXT_MUTED), Spacer(0, 1), Text(value, valueColor), spacing = 0)
+        val content = Column(Text(key, Theme.TEXT_MUTED, scale = Text.SMALL), Spacer(0, 2), Text(value, valueColor), spacing = 0)
         return Frame(w, content.height + 12, Row(Spacer(6), content), Theme.SURFACE_ALT, Theme.BORDER, HAlign.START, VAlign.CENTER)
     }
 

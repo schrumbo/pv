@@ -43,9 +43,7 @@ object FishingPage {
     /** One column per fish; four heads bottom-up (bronze → diamond), catch count as the stack size. */
     private fun fish(t: TrophyData): Component {
         if (t.fish.isEmpty()) return Text("No trophy fish caught", Theme.TEXT_MUTED)
-        // Leading spacer: the per-tier count is drawn left of each head and would otherwise be
-        // scissor-clipped on the first column when it overflows the icon (big six/seven-digit counts).
-        return Row(listOf(Spacer(6, 0)) + t.fish.map { fishColumn(it) }, spacing = 3)
+        return Row(t.fish.map { fishColumn(it) }, spacing = 3)
     }
 
     private fun fishColumn(f: TrophyFish): Component {

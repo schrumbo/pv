@@ -14,7 +14,7 @@ enum class Page(val title: String, val icon: String) {
     FARMING("Farming", "diamond_hoe"),
     FISHING("Fishing", "fishing_rod"),
     HUNTING("Hunting", "lead"),
-    BESTIARY("Bestiary", "zombie_head"),
+    COMBAT("Combat", "diamond_sword"),
     CATACOMBS("Catacombs", "wither_skeleton_skull"),
     RIFT("Rift", "ender_eye"),
     INVENTORY("Loadout", "shulker_box"),

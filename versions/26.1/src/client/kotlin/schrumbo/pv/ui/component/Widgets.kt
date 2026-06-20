@@ -3,19 +3,41 @@ package schrumbo.pv.ui.component
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.world.item.ItemStack
 import schrumbo.pv.render.ItemRenderUtils
+import kotlin.math.ceil
 import net.minecraft.network.chat.Component as McComponent
 
-/** A single line of text. */
+/**
+ * A single line of text at one of a few fixed [scale] steps (see the companion). The mod never scales
+ * pages to fit; instead sections are set apart by size + spacing, not labels and separator lines.
+ */
 class Text(
     private val text: String,
     private val color: Int,
     private val shadow: Boolean = true,
+    private val scale: Float = NORMAL,
 ) : Component() {
-    override val width get() = font.width(text)
-    override val height get() = font.lineHeight
+    override val width get() = ceil(font.width(text) * scale).toInt()
+    override val height get() = ceil(font.lineHeight * scale).toInt()
 
     override fun render(ctx: GuiGraphicsExtractor, x: Int, y: Int, mouseX: Int, mouseY: Int) {
-        ctx.text(font, text, x, y, color, shadow)
+        if (scale == NORMAL) {
+            ctx.text(font, text, x, y, color, shadow)
+            return
+        }
+        val pose = ctx.pose()
+        pose.pushMatrix()
+        pose.translate(x.toFloat(), y.toFloat())
+        pose.scale(scale, scale)
+        ctx.text(font, text, 0, 0, color, shadow)
+        pose.popMatrix()
+    }
+
+    companion object {
+        /** Section heading — replaces the old "LABEL" + separator line. */
+        const val SUBTITLE = 1.5f
+        const val NORMAL = 1f
+        /** Secondary detail (counts, captions). */
+        const val SMALL = 0.75f
     }
 }
 

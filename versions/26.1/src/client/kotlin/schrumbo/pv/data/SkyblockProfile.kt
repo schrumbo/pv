@@ -63,6 +63,7 @@ data class SkyblockProfile(
     val skillAverage: Double,
     val slayers: List<SlayerEntry>,
     val bestiaryKills: Map<String, Long>,
+    val combat: CombatData,
     val collections: Map<String, Long>,
     val mining: MiningData,
     val trophy: TrophyData,

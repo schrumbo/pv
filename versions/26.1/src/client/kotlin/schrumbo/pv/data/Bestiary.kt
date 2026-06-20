@@ -15,8 +15,14 @@ data class MobDef(
     val item: String?,
 )
 
-/** Static definition of one bestiary island: its key, display name and ordered mobs. */
-data class IslandDef(val key: String, val name: String, val mobs: List<MobDef>)
+/** Static definition of one bestiary island: its key, display name, in-game menu icon and mobs. */
+data class IslandDef(
+    val key: String,
+    val name: String,
+    val mobs: List<MobDef>,
+    val texture: String?,
+    val item: String?,
+)
 
 /**
  * A mob resolved against a player's kills: its definition, summed kills, current and max tier,
@@ -57,12 +63,22 @@ object BestiaryRegistry {
             k to v.asJsonArray.map { it.asLong }
         }
         islands = root.getAsJsonArray("islands").map { it.asJsonObject }.map { island ->
+            val ic = island.get("icon")?.takeIf { it.isJsonObject }?.asJsonObject
             IslandDef(
                 key = island.get("key").asString,
                 name = island.get("name").asString,
                 mobs = island.getAsJsonArray("mobs").map { it.asJsonObject }.map { mob -> mobDef(mob) },
+                texture = ic?.get("tex")?.asString,
+                item = ic?.get("item")?.asString,
             )
         }
+    }
+
+    /** The island's in-game bestiary-menu icon — a textured skull or vanilla item. */
+    fun islandIcon(def: IslandDef): ItemStack = when {
+        def.texture != null -> SkullItems.fromTexture(def.texture)
+        def.item != null -> SkullItems.vanilla(def.item)
+        else -> ItemStack.EMPTY
     }
 
     private fun mobDef(mob: JsonObject): MobDef = MobDef(

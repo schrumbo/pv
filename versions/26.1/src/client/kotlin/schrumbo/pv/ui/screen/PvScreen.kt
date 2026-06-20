@@ -23,6 +23,7 @@ import schrumbo.pv.ui.component.ClickRegistry
 import schrumbo.pv.ui.component.Hover
 import schrumbo.pv.ui.page.BestiaryPage
 import schrumbo.pv.ui.page.CollectionsPage
+import schrumbo.pv.ui.page.CombatPage
 import schrumbo.pv.ui.page.DungeonsPage
 import schrumbo.pv.ui.page.FarmingPage
 import schrumbo.pv.ui.page.FishingPage
@@ -44,6 +45,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
 
     private var page = Page.GENERAL
     private var dungeonMaster = false
+    private var combatSub = CombatPage.Sub.BESTIARY
     private var bestiaryIsland = 0
     private var bestiaryRailScroll = 0
     private var collectionCategory = 0
@@ -70,14 +72,11 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
     private val profileChipRects = mutableListOf<Pair<IntArray, Int>>()
 
     private val tabRects = mutableListOf<Pair<IntArray, Page>>()
+    private val combatSubRects = mutableListOf<Pair<IntArray, CombatPage.Sub>>()
+    private val SUB_RAIL_W = 20   // rail depth, mirrors the top strip depth (topH)
 
-    // Transform of the (possibly scaled) General main column, for click hit-testing.
-    private var mainTfX = 0
-    private var mainTfY = 0
-    private var mainScale = 1f
-
-    // Vertical scroll offset per page (scrollable pages render at scale 1 and scroll instead of
-    // rescaling when their content — or a sub-page — overflows the panel).
+    // Vertical scroll offset per page. Pages never rescale to fit (fixed text sizes); content that
+    // overflows the panel scrolls instead.
     private val scrollOffsets = HashMap<Page, Int>()
     private var curMaxScroll = 0
     private var contentRect = intArrayOf(0, 0, 0, 0)
@@ -127,6 +126,10 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
 
         tabBar(context, px + 10, py, panelTop, mouseX, mouseY)
         bottomBar(context, px, panelBottom + floatGap, panelW, botH, mouseX, mouseY)
+
+        // Pages with sub-categories get a rail OUTSIDE the panel on the left (on the backdrop, like
+        // the top tabs sit above the panel); the active chip merges rightward into the surface.
+        if (page == Page.COMBAT) subTabRail(context, px - SUB_RAIL_W, panelTop, mouseX, mouseY)
 
         val pad = 12
         val contentX = px + pad
@@ -246,7 +249,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
             is ProfileState.Error -> centered(ctx, s.message, Theme.WARN, x + width / 2, y + height / 2)
             is ProfileState.Loaded -> when (page) {
                 Page.GENERAL -> renderGeneral(ctx, s, x, y, width, height, mouseX, mouseY)
-                Page.BESTIARY -> renderBestiary(ctx, s, x, y, width, height, mouseX, mouseY)
+                Page.COMBAT -> renderCombat(ctx, s, x, y, width, height, mouseX, mouseY)
                 Page.CATACOMBS -> renderDungeons(ctx, s, x, y, width, height, mouseX, mouseY)
                 Page.COLLECTIONS -> renderCollections(ctx, s, x, y, width, height, mouseX, mouseY)
                 Page.MINING -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> MiningPage.build(p, w) }
@@ -281,6 +284,53 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         }
     }
 
+    /** Combat tab: the left sub-tab rail is drawn as chrome (see [subTabRail]); here only the body. */
+    private fun renderCombat(
+        ctx: GuiGraphicsExtractor, s: ProfileState.Loaded,
+        x: Int, y: Int, width: Int, height: Int, mouseX: Int, mouseY: Int,
+    ) {
+        val index = profileIndex.coerceIn(0, s.profiles.size - 1)
+        when (combatSub) {
+            CombatPage.Sub.BESTIARY -> renderBestiary(ctx, s, x, y, width, height, mouseX, mouseY)
+            CombatPage.Sub.MOBS -> renderScrolled(ctx, x, y, width, height, mouseX, mouseY) { w, _ -> CombatPage.mobs(s.profiles[index], w) }
+            CombatPage.Sub.CRIMSON -> renderScrolled(ctx, x, y, width, height, mouseX, mouseY) { w, _ -> CombatPage.crimson(s.profiles[index], w) }
+        }
+    }
+
+    /**
+     * Sub-category rail attached to the panel's left edge — same folder-chip look as [tabBar] but
+     * rotated: the accent sits on the outer (left) edge, the active chip opens rightward into the
+     * content surface (no right border). Icon-only; the label shows as a hover tooltip.
+     */
+    private fun subTabRail(ctx: GuiGraphicsExtractor, railX: Int, topY: Int, mouseX: Int, mouseY: Int) {
+        combatSubRects.clear()
+        val iconSize = 14
+        val chipH = 24            // chip length along the rail (mirrors an icon-only top tab's width)
+        val gap = 4
+        val lead = 10             // lead-in from the corner (mirrors tabBar's startX = px + 10)
+        val innerX = railX + SUB_RAIL_W   // the panel's left border edge; the rail merges here
+        var cy = topY + lead
+        for (sub in CombatPage.Sub.entries) {
+            val active = sub == combatSub
+            val rect = intArrayOf(railX, cy, SUB_RAIL_W, chipH)
+            val hovered = hit(rect, mouseX, mouseY)
+            // Active opens rightward 1px into the surface; inactive is closed by the panel border.
+            val right = if (active) innerX + 1 else innerX
+            ctx.fill(railX, cy, right, cy + chipH, if (active) Theme.SURFACE else if (hovered) Theme.BORDER else Theme.SURFACE_ALT)
+            ctx.fill(railX, cy, railX + 1, cy + chipH, if (active) Theme.ACCENT else Theme.BORDER) // outer (left) accent
+            ctx.fill(railX, cy, innerX, cy + 1, Theme.BORDER)                                      // top side
+            ctx.fill(railX, cy + chipH - 1, innerX, cy + chipH, Theme.BORDER)                      // bottom side
+
+            val ix = railX + (SUB_RAIL_W - iconSize) / 2
+            ItemRenderUtils.renderItem(ctx, icon(sub.icon), ix, cy + (chipH - iconSize) / 2, iconSize / 16f)
+            if (hovered && !active) {
+                ctx.setComponentTooltipForNextFrame(font, listOf(Component.literal(sub.label)), Hover.screenX, Hover.screenY)
+            }
+            combatSubRects += rect to sub
+            cy += chipH + gap
+        }
+    }
+
     private fun renderBestiary(
         ctx: GuiGraphicsExtractor, s: ProfileState.Loaded,
         x: Int, y: Int, width: Int, height: Int, mouseX: Int, mouseY: Int,
@@ -299,7 +349,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         val bodyH = height - header.height - 8
 
         // Island rail — scrolls on its own when taller than the panel, so every island stays reachable.
-        val rail = BestiaryPage.rail(islands, active) { bestiaryIsland = it; scrollOffsets[Page.BESTIARY] = 0 }
+        val rail = BestiaryPage.rail(islands, active) { bestiaryIsland = it; scrollOffsets[Page.COMBAT] = 0 }
         railMaxScroll = (rail.height - bodyH).coerceAtLeast(0)
         bestiaryRailScroll = bestiaryRailScroll.coerceIn(0, railMaxScroll)
         railRect = intArrayOf(x, bodyY, BestiaryPage.RAIL_W, bodyH)
@@ -459,11 +509,6 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         val off = scrollOffsets.getOrDefault(page, 0).coerceIn(0, maxScroll)
         scrollOffsets[page] = off
 
-        // Scrollable pages draw at absolute coords (scale 1); clicks need no transform.
-        mainTfX = 0
-        mainTfY = 0
-        mainScale = 1f
-
         ctx.enableScissor(x, y, x + availW, y + availH)
         content.render(ctx, x, y - off, mouseX, mouseY)
         ctx.disableScissor()
@@ -551,18 +596,21 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         for ((rect, p) in tabRects) {
             if (hit(rect, mx, my)) { page = p; return true }
         }
-        // Page click regions live in the (possibly scaled) content space; only fire when the cursor
-        // is inside the content viewport so regions scrolled under the chrome stay inert.
+        if (page == Page.COMBAT) {
+            for ((rect, sub) in combatSubRects) {
+                if (hit(rect, mx, my)) { combatSub = sub; scrollOffsets[Page.COMBAT] = 0; return true }
+            }
+        }
+        // Page click regions live in content space; only fire when the cursor is inside the content
+        // viewport so regions scrolled under the chrome stay inert.
         if (hit(contentRect, mx, my)) {
-            val lmx = ((mx - mainTfX) / mainScale).toInt()
-            val lmy = ((my - mainTfY) / mainScale).toInt()
-            if (ClickRegistry.fire(lmx, lmy)) return true
+            if (ClickRegistry.fire(mx, my)) return true
         }
         return super.mouseClicked(event, doubleClick)
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
-        if (page == Page.BESTIARY && railMaxScroll > 0 && hit(railRect, mouseX.toInt(), mouseY.toInt())) {
+        if (page == Page.COMBAT && combatSub == CombatPage.Sub.BESTIARY && railMaxScroll > 0 && hit(railRect, mouseX.toInt(), mouseY.toInt())) {
             val step = font.lineHeight * 3
             bestiaryRailScroll = (bestiaryRailScroll - (scrollY * step).toInt()).coerceIn(0, railMaxScroll)
             return true

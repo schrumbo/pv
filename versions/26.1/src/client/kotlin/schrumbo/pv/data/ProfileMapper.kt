@@ -34,6 +34,7 @@ object ProfileMapper {
             skillAverage = average(skills),
             slayers = slayers(member),
             bestiaryKills = bestiaryKills(member),
+            combat = combat(member),
             collections = collections(member),
             mining = mining(member),
             trophy = trophyFish(member),
@@ -159,6 +160,48 @@ object ProfileMapper {
             if (value.isJsonPrimitive && value.asJsonPrimitive.isNumber) out[key] = value.asLong
         }
         return out
+    }
+
+    private val KUUDRA_TIERS = listOf(
+        "none" to "Basic", "hot" to "Hot", "burning" to "Burning", "fiery" to "Fiery", "infernal" to "Infernal",
+    )
+    private val DOJO_TESTS = listOf(
+        "mob_kb" to "Force", "wall_jump" to "Stamina", "archer" to "Mastery", "sword_swap" to "Discipline",
+        "snake" to "Swiftness", "fireball" to "Control", "lock_head" to "Tenacity",
+    )
+
+    /** Mob kills/deaths (`player_stats`) + Crimson Isle (`nether_island_player_data`). */
+    private fun combat(member: JsonObject): CombatData {
+        val ps = member.obj("player_stats")
+        fun counts(obj: JsonObject?): List<MobCount> = obj?.entrySet()
+            ?.filter { (k, v) -> k != "total" && v.isJsonPrimitive && v.asJsonPrimitive.isNumber }
+            ?.map { (k, v) -> MobCount(prettify(k), v.asLong) }
+            ?.filter { it.count > 0 }
+            ?.sortedByDescending { it.count }
+            ?: emptyList()
+        val kills = counts(ps?.obj("kills"))
+        val deaths = counts(ps?.obj("deaths"))
+        val mobs = MobStats(kills, deaths, kills.sumOf { it.count }, deaths.sumOf { it.count })
+
+        val nether = member.obj("nether_island_player_data")
+        val kuudraObj = nether?.obj("kuudra_completed_tiers")
+        val kuudra = KUUDRA_TIERS.map { (id, name) ->
+            KuudraTier(id, name, kuudraObj?.num(id)?.toInt() ?: 0, kuudraObj?.num("highest_wave_$id")?.toInt() ?: 0)
+        }
+        val dojoObj = nether?.obj("dojo")
+        val dojo = DOJO_TESTS.map { (id, name) ->
+            DojoTest(id, name, dojoObj?.num("dojo_points_$id")?.toInt() ?: 0, dojoObj?.num("dojo_time_$id")?.toInt() ?: -1)
+        }
+        val crimson = CrimsonIsleData(
+            selectedFaction = when (nether?.str("selected_faction")) {
+                "mages" -> "Mage"; "barbarians" -> "Barbarian"; else -> null
+            },
+            mageReputation = nether?.num("mages_reputation")?.toInt() ?: 0,
+            barbarianReputation = nether?.num("barbarians_reputation")?.toInt() ?: 0,
+            kuudra = kuudra,
+            dojo = dojo,
+        )
+        return CombatData(mobs, crimson)
     }
 
     /** The `collection` map (collection key → collected amount); only numeric entries. */
