@@ -1,16 +1,16 @@
 package schrumbo.pv.ui.page
 
 import net.minecraft.client.Minecraft
-import net.minecraft.core.registries.BuiltInRegistries
-import net.minecraft.resources.Identifier
-import net.minecraft.world.item.ItemStack
 import schrumbo.pv.data.BestiaryRegistry
 import schrumbo.pv.data.IslandProgress
 import schrumbo.pv.data.MobTier
 import schrumbo.pv.data.SkyblockProfile
 import schrumbo.pv.ui.Theme
+import schrumbo.pv.ui.component.Clickable
 import schrumbo.pv.ui.component.Column
 import schrumbo.pv.ui.component.Component
+import schrumbo.pv.ui.component.Frame
+import schrumbo.pv.ui.component.HAlign
 import schrumbo.pv.ui.component.Item
 import schrumbo.pv.ui.component.ProgressBar
 import schrumbo.pv.ui.component.Row
@@ -20,50 +20,54 @@ import schrumbo.pv.ui.component.Tooltip
 import schrumbo.pv.ui.component.VAlign
 import schrumbo.pv.util.Format
 
-/** Bestiary page: a fixed left island rail and the selected island's mob tiers as a scrolling grid. */
+/** Bestiary page: a horizontal island selector and the selected island's mob tiers as a grid. */
 object BestiaryPage {
 
-    const val RAIL_W = 22
     private const val COL_GAP = 14
-
-    /** Representative vanilla icon per island key, shown in the left rail. */
-    private val ISLAND_ICONS = mapOf(
-        "dynamic" to "grass_block", "hub" to "oak_sapling", "farming_1" to "wheat",
-        "combat_1" to "string", "combat_3" to "ender_pearl", "crimson_isle" to "blaze_powder",
-        "mining_2" to "iron_pickaxe", "mining_3" to "diamond_pickaxe", "crystal_hollows" to "amethyst_shard",
-        "foraging_1" to "oak_log", "foraging_2" to "jungle_log", "spooky_festival" to "carved_pumpkin",
-        "mythological_creatures" to "bone", "jerry" to "snowball", "kuudra" to "magma_cream",
-        "fishing" to "fishing_rod", "catacombs" to "skeleton_skull", "garden" to "jungle_sapling",
-        "lotus_atoll" to "lily_pad",
-    )
 
     fun islands(p: SkyblockProfile): List<IslandProgress> = BestiaryRegistry.resolve(p.bestiaryKills)
 
-    fun header(islands: List<IslandProgress>, width: Int): Component {
+    fun header(islands: List<IslandProgress>, width: Int, active: Int = -1): Component {
         val maxed = islands.sumOf { it.maxedCount }
         val total = islands.sumOf { it.total }
         val kills = islands.sumOf { i -> i.mobs.sumOf { it.kills } }
-        return Row(
+        val stats = Row(
             Text("${Format.compact(kills)} kills", Theme.TEXT_MUTED),
             Text("$maxed/$total maxed", Theme.TEXT_MUTED),
             spacing = 14,
             align = VAlign.CENTER,
         )
+        val name = islands.getOrNull(active)?.def?.name ?: return stats
+        return SpaceBetween(width, Text(name, Theme.TEXT, scale = Text.SUBTITLE), stats)
     }
 
-    fun rail(islands: List<IslandProgress>, active: Int, onIsland: (Int) -> Unit): Component =
-        Column(islands.mapIndexed { i, island -> islandRow(island, i == active) { onIsland(i) } }, spacing = 1)
+    /** Horizontal island selector: every island as an icon, wrapping to fit [width]. */
+    fun selector(islands: List<IslandProgress>, active: Int, width: Int, onIsland: (Int) -> Unit): Component {
+        val cell = 20
+        val gap = 3
+        val perRow = ((width + gap) / (cell + gap)).coerceAtLeast(1)
+        val chips = islands.mapIndexed { i, island -> islandChip(island, i == active) { onIsland(i) } }
+        return Column(chips.chunked(perRow).map { Row(it, spacing = gap) }, spacing = gap)
+    }
 
-    private fun islandRow(island: IslandProgress, active: Boolean, onClick: () -> Unit): Component =
-        PageKit.bookmark(RAIL_W, icon(ISLAND_ICONS[island.def.key] ?: "paper"), island.def.name, active, onClick)
+    private fun islandChip(island: IslandProgress, active: Boolean, onClick: () -> Unit): Component {
+        val frame = Frame(
+            20, 20, Item(BestiaryRegistry.islandIcon(island.def), 16, tooltip = false),
+            if (active) Theme.SURFACE_ALT else null,
+            if (active) Theme.ACCENT else null,
+            HAlign.CENTER, VAlign.CENTER,
+        )
+        val tip = listOf("§f${island.def.name}", "§7${island.maxedCount}§7/§f${island.total}§7 maxed")
+        return Clickable(Tooltip(frame, tip), hoverFill = Theme.HOVER, onClick = onClick)
+    }
 
     fun grid(island: IslandProgress, width: Int): Component {
-        val cellW = (width - COL_GAP) / 2
+        val cols = (width / 200).coerceIn(2, 3)
+        val cellW = (width - COL_GAP * (cols - 1)) / cols
         val cells = island.mobs.map { mobCell(it, cellW) }
-        val half = (cells.size + 1) / 2
+        val per = (cells.size + cols - 1) / cols
         return Row(
-            Column(cells.take(half), spacing = 5),
-            Column(cells.drop(half), spacing = 5),
+            (0 until cols).map { c -> Column(cells.drop(c * per).take(per), spacing = 5) },
             spacing = COL_GAP,
             align = VAlign.TOP,
         )
@@ -100,10 +104,5 @@ object BestiaryPage {
         var t = s
         while (t.isNotEmpty() && font.width("$t…") > maxW) t = t.dropLast(1)
         return "$t…"
-    }
-
-    private fun icon(name: String): ItemStack {
-        val id = Identifier.tryParse(name) ?: return ItemStack.EMPTY
-        return ItemStack(BuiltInRegistries.ITEM.getValue(id))
     }
 }

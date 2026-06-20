@@ -47,7 +47,6 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
     private var dungeonMaster = false
     private var combatSub = CombatPage.Sub.BESTIARY
     private var bestiaryIsland = 0
-    private var bestiaryRailScroll = 0
     private var collectionCategory = 0
     private var inventoryTab = 0
     private var containerPage = 0
@@ -60,10 +59,6 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
     private var huntingFocused = false
     private var huntingInputRect = intArrayOf(0, 0, 0, 0)
 
-    // Bestiary island rail (scrolls independently of the mob grid when it overflows the panel).
-    private var railRect = intArrayOf(0, 0, 0, 0)
-    private var railMaxScroll = 0
-
     private var cachedEntity: LivingEntity? = null
     private var cachedEntityIndex = -1
 
@@ -75,11 +70,25 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
     private val combatSubRects = mutableListOf<Pair<IntArray, CombatPage.Sub>>()
     private val SUB_RAIL_W = 20   // rail depth, mirrors the top strip depth (topH)
 
-    // Vertical scroll offset per page. Pages never rescale to fit (fixed text sizes); content that
-    // overflows the panel scrolls instead.
-    private val scrollOffsets = HashMap<Page, Int>()
-    private var curMaxScroll = 0
+    // Independent scroll viewports, keyed by a stable id (a page may host several — e.g. the Mobs
+    // sub-page has separate kills/deaths columns). Each region keeps its offset across frames; its
+    // geometry is refreshed every frame. Every region's scrollbar is wheel-scrollable and drag-able.
+    private val scrollRegions = HashMap<String, ScrollRegion>()
+    private val activeScroll = ArrayList<ScrollRegion>()   // regions drawn this frame
+    private var dragRegion: ScrollRegion? = null
+    private var dragGrab = 0                                // cursor offset within the grabbed thumb
     private var contentRect = intArrayOf(0, 0, 0, 0)
+
+    /** A scrollable viewport: a persistent [offset] plus this-frame geometry for wheel/drag hit-tests. */
+    private class ScrollRegion {
+        var offset = 0
+        var x = 0; var y = 0; var w = 0; var h = 0; var contentH = 0
+        var thumbY = 0; var thumbH = 0
+        val maxScroll get() = (contentH - h).coerceAtLeast(0)
+        val hasBar get() = maxScroll > 0
+    }
+
+    private fun resetScroll(vararg ids: String) { for (id in ids) scrollRegions[id]?.offset = 0 }
 
     // Garden is a separate endpoint, fetched lazily the first time the Farming page is opened for a
     // profile. Key present = already requested; value null = still loading or unavailable.
@@ -107,8 +116,13 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         ClickRegistry.reset()
         context.fill(0, 0, width, height, Theme.BACKDROP)
 
-        val panelW = minOf(width - 40, 680)
-        val panelH = minOf(height - 40, 430)
+        // The panel is centered: left margin == right margin, top margin == bottom margin. The left
+        // sub-rail sits inside the left margin (reserved on every page so nothing shifts); the panel is
+        // shrunk just enough that the rail still clears the screen edge by [edge].
+        val edge = 20
+        val railW = SUB_RAIL_W
+        val panelW = minOf(width - 2 * (railW + edge), 680)
+        val panelH = minOf(height - 2 * edge, 430)
         val px = (width - panelW) / 2
         val py = (height - panelH) / 2
 
@@ -137,7 +151,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         val contentW = panelW - pad * 2
         val contentH = (panelBottom - pad) - contentY
         contentRect = intArrayOf(contentX, contentY, contentW, contentH)
-        curMaxScroll = 0
+        activeScroll.clear()
         renderContent(context, contentX, contentY, contentW, contentH, mouseX, mouseY)
     }
 
@@ -292,8 +306,28 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         val index = profileIndex.coerceIn(0, s.profiles.size - 1)
         when (combatSub) {
             CombatPage.Sub.BESTIARY -> renderBestiary(ctx, s, x, y, width, height, mouseX, mouseY)
-            CombatPage.Sub.MOBS -> renderScrolled(ctx, x, y, width, height, mouseX, mouseY) { w, _ -> CombatPage.mobs(s.profiles[index], w) }
-            CombatPage.Sub.CRIMSON -> renderScrolled(ctx, x, y, width, height, mouseX, mouseY) { w, _ -> CombatPage.crimson(s.profiles[index], w) }
+            CombatPage.Sub.MOBS -> renderMobs(ctx, s.profiles[index], x, y, width, height, mouseX, mouseY)
+            CombatPage.Sub.CRIMSON -> renderScrolled(ctx, x, y, width, height, mouseX, mouseY, "crimson") { w, _ -> CombatPage.crimson(s.profiles[index], w) }
+        }
+    }
+
+    /** Mobs sub-page: kills and deaths as two side-by-side columns that scroll independently. */
+    private fun renderMobs(
+        ctx: GuiGraphicsExtractor, p: schrumbo.pv.data.SkyblockProfile,
+        x: Int, y: Int, width: Int, height: Int, mouseX: Int, mouseY: Int,
+    ) {
+        val m = p.combat.mobs
+        if (m.kills.isEmpty() && m.deaths.isEmpty()) {
+            centered(ctx, "No combat stats", Theme.TEXT_MUTED, x + width / 2, y + height / 2)
+            return
+        }
+        val gap = 14
+        val colW = (width - gap) / 2
+        renderScrolled(ctx, x, y, colW, height, mouseX, mouseY, "mobs_kills") { w, _ ->
+            CombatPage.mobsColumn("Kills", m.totalKills, m.kills, w)
+        }
+        renderScrolled(ctx, x + colW + gap, y, colW, height, mouseX, mouseY, "mobs_deaths") { w, _ ->
+            CombatPage.mobsColumn("Deaths", m.totalDeaths, m.deaths, w)
         }
     }
 
@@ -343,38 +377,16 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         }
         val active = bestiaryIsland.coerceIn(0, islands.size - 1)
 
-        val header = BestiaryPage.header(islands, width)
+        // Header + horizontal island selector are fixed at the top; only the mob grid scrolls.
+        val header = BestiaryPage.header(islands, width, active)
         header.render(ctx, x, y, mouseX, mouseY)
-        val bodyY = y + header.height + 8
-        val bodyH = height - header.height - 8
+        var cy = y + header.height + 6
 
-        // Island rail — scrolls on its own when taller than the panel, so every island stays reachable.
-        val rail = BestiaryPage.rail(islands, active) { bestiaryIsland = it; scrollOffsets[Page.COMBAT] = 0 }
-        railMaxScroll = (rail.height - bodyH).coerceAtLeast(0)
-        bestiaryRailScroll = bestiaryRailScroll.coerceIn(0, railMaxScroll)
-        railRect = intArrayOf(x, bodyY, BestiaryPage.RAIL_W, bodyH)
+        val selector = BestiaryPage.selector(islands, active, width) { bestiaryIsland = it; resetScroll("COMBAT") }
+        selector.render(ctx, x, cy, mouseX, mouseY)
+        cy += selector.height + 8
 
-        val before = ClickRegistry.regions.size
-        ctx.enableScissor(x, bodyY, x + BestiaryPage.RAIL_W, bodyY + bodyH)
-        rail.render(ctx, x, bodyY - bestiaryRailScroll, mouseX, mouseY)
-        ctx.disableScissor()
-        // Drop rail regions scrolled outside the viewport so they can't be clicked through the chrome.
-        val regs = ClickRegistry.regions
-        var i = before
-        while (i < regs.size) {
-            if (regs[i].y + regs[i].h <= bodyY || regs[i].y >= bodyY + bodyH) regs.removeAt(i) else i++
-        }
-        if (railMaxScroll > 0) {
-            val barW = 2
-            val tx = x + BestiaryPage.RAIL_W - barW
-            ctx.fill(tx, bodyY, tx + barW, bodyY + bodyH, Theme.SURFACE_ALT)
-            val thumbH = (bodyH * bodyH / rail.height).coerceIn(12, bodyH)
-            val thumbY = bodyY + (bodyH - thumbH) * bestiaryRailScroll / railMaxScroll
-            ctx.fill(tx, thumbY, tx + barW, thumbY + thumbH, Theme.BORDER)
-        }
-
-        val gx = x + BestiaryPage.RAIL_W + 8
-        renderScrolled(ctx, gx, bodyY, width - BestiaryPage.RAIL_W - 8, bodyH, mouseX, mouseY) { w, _ ->
+        renderScrolled(ctx, x, cy, width, height - (cy - y), mouseX, mouseY) { w, _ ->
             BestiaryPage.grid(islands[active], w)
         }
     }
@@ -444,7 +456,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         val active = inventoryTab.coerceIn(0, InventoryPage.entryCount(p) - 1)
 
         // Fixed rail (never scrolls); clicks resolve at scale 1 — renderScrolled sets that transform.
-        InventoryPage.rail(p, active) { inventoryTab = it; containerPage = 0; scrollOffsets[Page.INVENTORY] = 0 }
+        InventoryPage.rail(p, active) { inventoryTab = it; containerPage = 0; resetScroll("INVENTORY") }
             .render(ctx, x, y, mouseX, mouseY)
 
         val gx = x + InventoryPage.RAIL_W + 8
@@ -454,7 +466,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
 
         val gy = y + header.height + 8
         renderScrolled(ctx, gx, gy, gw, height - header.height - 8, mouseX, mouseY) { w, _ ->
-            InventoryPage.body(p, active, w, containerPage) { containerPage = it; scrollOffsets[Page.INVENTORY] = 0 }
+            InventoryPage.body(p, active, w, containerPage) { containerPage = it; resetScroll("INVENTORY") }
         }
     }
 
@@ -474,7 +486,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         header.render(ctx, x, y, mouseX, mouseY)
         val bodyY = y + header.height + 8
 
-        CollectionsPage.rail(cats, active) { collectionCategory = it; scrollOffsets[Page.COLLECTIONS] = 0 }
+        CollectionsPage.rail(cats, active) { collectionCategory = it; resetScroll("COLLECTIONS") }
             .render(ctx, x, bodyY, mouseX, mouseY)
 
         val gx = x + CollectionsPage.RAIL_W + 8
@@ -500,27 +512,36 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
      */
     private fun renderScrolled(
         ctx: GuiGraphicsExtractor, x: Int, y: Int, availW: Int, availH: Int, mouseX: Int, mouseY: Int,
+        id: String = page.name,
         build: (Int, Int) -> schrumbo.pv.ui.component.Component,
     ) {
         val barGap = 6
         val content = build(availW - barGap, availH)
-        val maxScroll = (content.height - availH).coerceAtLeast(0)
-        curMaxScroll = maxScroll
-        val off = scrollOffsets.getOrDefault(page, 0).coerceIn(0, maxScroll)
-        scrollOffsets[page] = off
+        val r = scrollRegions.getOrPut(id) { ScrollRegion() }
+        r.x = x; r.y = y; r.w = availW; r.h = availH; r.contentH = content.height
+        r.offset = r.offset.coerceIn(0, r.maxScroll)
+        activeScroll += r
 
         ctx.enableScissor(x, y, x + availW, y + availH)
-        content.render(ctx, x, y - off, mouseX, mouseY)
+        content.render(ctx, x, y - r.offset, mouseX, mouseY)
         ctx.disableScissor()
 
-        if (maxScroll > 0) {
+        if (r.hasBar) {
             val barW = 3
             val trackX = x + availW - barW
             ctx.fill(trackX, y, trackX + barW, y + availH, Theme.SURFACE_ALT)
-            val thumbH = (availH * availH / content.height).coerceIn(14, availH)
-            val thumbY = y + (availH - thumbH) * off / maxScroll
-            ctx.fill(trackX, thumbY, trackX + barW, thumbY + thumbH, Theme.BORDER)
+            r.thumbH = (availH * availH / content.height).coerceIn(14, availH)
+            r.thumbY = y + (availH - r.thumbH) * r.offset / r.maxScroll
+            ctx.fill(trackX, r.thumbY, trackX + barW, r.thumbY + r.thumbH, if (dragRegion === r) Theme.ACCENT else Theme.BORDER)
         }
+    }
+
+    /** Moves a region's offset so its thumb top sits at the dragged cursor position. */
+    private fun updateDrag(r: ScrollRegion, mouseY: Int) {
+        val travel = r.h - r.thumbH
+        if (travel <= 0) return
+        val ty = (mouseY - dragGrab).coerceIn(r.y, r.y + travel)
+        r.offset = ((ty - r.y).toLong() * r.maxScroll / travel).toInt()
     }
 
     private fun placeholder(ctx: GuiGraphicsExtractor, title: String, x: Int, y: Int, width: Int, height: Int) {
@@ -541,7 +562,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         val cp = event.codepoint()
         if (cp < ' '.code || cp == 127) return false
         if (inputFocused) { input += event.codepointAsString(); return true }
-        if (huntingFocused) { huntingQuery += event.codepointAsString(); scrollOffsets[Page.HUNTING] = 0; return true }
+        if (huntingFocused) { huntingQuery += event.codepointAsString(); resetScroll("HUNTING"); return true }
         return false
     }
 
@@ -556,7 +577,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         }
         if (huntingFocused) {
             when (event.key()) {
-                259 -> { if (huntingQuery.isNotEmpty()) { huntingQuery = huntingQuery.dropLast(1); scrollOffsets[Page.HUNTING] = 0 }; return true }
+                259 -> { if (huntingQuery.isNotEmpty()) { huntingQuery = huntingQuery.dropLast(1); resetScroll("HUNTING") }; return true }
                 256, 257, 335 -> { huntingFocused = false; return true } // ESCAPE / ENTER
                 else -> return true
             }
@@ -598,7 +619,18 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         }
         if (page == Page.COMBAT) {
             for ((rect, sub) in combatSubRects) {
-                if (hit(rect, mx, my)) { combatSub = sub; scrollOffsets[Page.COMBAT] = 0; return true }
+                if (hit(rect, mx, my)) { combatSub = sub; resetScroll("COMBAT", "mobs_kills", "mobs_deaths", "crimson"); return true }
+            }
+        }
+        // Scrollbar drag: grab the thumb (or jump the track) of any region under the cursor.
+        for (r in activeScroll.asReversed()) {
+            if (!r.hasBar) continue
+            val trackX = r.x + r.w - 3
+            if (mx >= trackX - 4 && mx <= r.x + r.w && my >= r.y && my < r.y + r.h) {
+                dragGrab = if (my >= r.thumbY && my < r.thumbY + r.thumbH) my - r.thumbY else r.thumbH / 2
+                dragRegion = r
+                updateDrag(r, my)
+                return true
             }
         }
         // Page click regions live in content space; only fire when the cursor is inside the content
@@ -610,18 +642,27 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, scrollY: Double): Boolean {
-        if (page == Page.COMBAT && combatSub == CombatPage.Sub.BESTIARY && railMaxScroll > 0 && hit(railRect, mouseX.toInt(), mouseY.toInt())) {
-            val step = font.lineHeight * 3
-            bestiaryRailScroll = (bestiaryRailScroll - (scrollY * step).toInt()).coerceIn(0, railMaxScroll)
-            return true
-        }
-        if (curMaxScroll > 0 && hit(contentRect, mouseX.toInt(), mouseY.toInt())) {
-            val step = font.lineHeight * 3
-            val cur = scrollOffsets.getOrDefault(page, 0)
-            scrollOffsets[page] = (cur - (scrollY * step).toInt()).coerceIn(0, curMaxScroll)
-            return true
+        val mx = mouseX.toInt()
+        val my = mouseY.toInt()
+        for (r in activeScroll.asReversed()) {
+            if (r.hasBar && mx >= r.x && mx < r.x + r.w && my >= r.y && my < r.y + r.h) {
+                val step = font.lineHeight * 3
+                r.offset = (r.offset - (scrollY * step).toInt()).coerceIn(0, r.maxScroll)
+                return true
+            }
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY)
+    }
+
+    override fun mouseDragged(event: MouseButtonEvent, dragX: Double, dragY: Double): Boolean {
+        val r = dragRegion ?: return super.mouseDragged(event, dragX, dragY)
+        updateDrag(r, event.y().toInt())
+        return true
+    }
+
+    override fun mouseReleased(event: MouseButtonEvent): Boolean {
+        if (dragRegion != null) { dragRegion = null; return true }
+        return super.mouseReleased(event)
     }
 
     private fun submit() {
