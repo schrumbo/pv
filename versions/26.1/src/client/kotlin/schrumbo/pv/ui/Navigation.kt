@@ -14,7 +14,7 @@ private const val DUNGEON_HEAD =
 enum class Page(val title: String, val icon: String, val skullTexture: String? = null) {
     GENERAL("General", "paper"),
     MINING("Mining", "stone_pickaxe"),
-    FORAGING("Foraging", "netherite_axe"),
+    FORAGING("Foraging", "jungle_sapling"),
     FARMING("Farming", "golden_hoe"),
     FISHING("Fishing", "fishing_rod"),
     HUNTING("Hunting", "lead"),

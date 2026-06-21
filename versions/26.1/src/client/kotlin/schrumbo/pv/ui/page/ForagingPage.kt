@@ -17,6 +17,7 @@ import schrumbo.pv.ui.component.Row
 import schrumbo.pv.ui.component.SpaceBetween
 import schrumbo.pv.ui.component.Spacer
 import schrumbo.pv.ui.component.Text
+import schrumbo.pv.ui.component.Tooltip
 import schrumbo.pv.ui.component.VAlign
 import schrumbo.pv.util.Format
 
@@ -39,16 +40,23 @@ object ForagingPage {
     /** Heart-of-the-Forest head, for the tree sub-tab icon. */
     val hotfIcon: ItemStack by lazy { SkullItems.fromTexture(HOTF_TEX) }
 
-    /** General sub-page: skill header, forest whispers and tree gifts (full width). */
+    private const val SLOT = 20
+    private const val GAP = 2
+    private const val GEAR_ROWS = 4
+    private const val GEAR_W = SLOT * 3 + GAP * 2
+    private const val GEAR_H = SLOT * GEAR_ROWS + GAP * (GEAR_ROWS - 1)
+    private const val WHISPER_W = 110
+    private const val TOP_GAP = 18
+
+    /** General sub-page: gear · whispers · tree gifts side by side, all the same height — mirrors Mining. */
     fun general(p: SkyblockProfile, width: Int): Component {
         val f = p.foraging
-        val total = f.whispers + f.whispersSpent
+        val treesW = (width - GEAR_W - WHISPER_W - TOP_GAP * 2).coerceIn(220, 320)
         return Column(
-            PageKit.skillHeader(p, SkillType.FORAGING, width),
-            Spacer(0, 6),
-            Row(whispersChip((width - 12) / 3, total)),
-            trees(f, width),
-            spacing = 12,
+            PageKit.skillHeader(p, SkillType.FORAGING, width, extra = "Heart of the Forest ${f.hotfLevel}"),
+            Spacer(0, 12),
+            Row(gear(p), whispersColumn(f), trees(f, treesW), spacing = TOP_GAP, align = VAlign.TOP),
+            spacing = 0,
         )
     }
 
@@ -58,30 +66,63 @@ object ForagingPage {
         return Frame(width, grid.height, grid, hAlign = HAlign.CENTER, vAlign = VAlign.TOP)
     }
 
-    /** Compact whispers chip mirroring the mining powder chips; value is earned total. */
-    private fun whispersChip(w: Int, total: Long): Component {
-        val body = Column(Text("Forest Whispers", Theme.TEXT_MUTED), Text(Format.compact(total), Theme.GREEN), spacing = 1)
-        val row = Row(Item(PageKit.icon("cyan_dye"), 14, tooltip = false), body, spacing = 4, align = VAlign.CENTER)
-        return Frame(w, row.height + 8, Row(Spacer(4), row), Theme.SURFACE_ALT, Theme.BORDER, HAlign.START, VAlign.CENTER)
+    /** Gear as a clean 3×4 grid: armor · equipment · axes, every column padded to [GEAR_ROWS]. */
+    private fun gear(p: SkyblockProfile): Component = Row(
+        slotColumn(p.foragingArmor),
+        slotColumn(p.foragingEquipment),
+        slotColumn(p.foragingTools),
+        spacing = GAP,
+        align = VAlign.TOP,
+    )
+
+    private fun slotColumn(items: List<ItemStack>): Component =
+        Column((0 until GEAR_ROWS).map { slot(items.getOrNull(it) ?: ItemStack.EMPTY) }, spacing = GAP)
+
+    private fun slot(stack: ItemStack): Component {
+        val inner: Component = if (stack.isEmpty) Spacer(SLOT - 4, SLOT - 4) else Item(stack, SLOT - 4, tooltip = true, decorations = true)
+        return Frame(SLOT, SLOT, inner, Theme.SURFACE_ALT, Theme.BORDER, HAlign.CENTER, VAlign.CENTER)
     }
 
-    /** One stat card per tree: gift head, name, milestone tier and total gifts with a tier progress bar. */
+    /**
+     * Currency chips stacked beside the gear, sized so the column ends flush with the gear grid.
+     * Two boxes (= 2 gear slots each) for now; a future second whisper type slots in here too.
+     */
+    private fun whispersColumn(f: ForagingData): Component = Column(
+        whisperChip(GEAR_H, "Forest Whispers", f.whispers + f.whispersSpent, Theme.GREEN, PageKit.icon("cyan_dye")),
+        spacing = GAP,
+    )
+
+    private fun whisperChip(h: Int, label: String, total: Long, color: Int, icon: ItemStack): Component {
+        val body = Row(Item(icon, 12, tooltip = false), Text(Format.compact(total), color), spacing = 5, align = VAlign.CENTER)
+        return Tooltip(
+            Frame(WHISPER_W, h, body, Theme.SURFACE_ALT, Theme.BORDER, HAlign.CENTER, VAlign.CENTER),
+            listOf("§f$label", "§7${Format.compact(total)} §8total"),
+        )
+    }
+
+    /** Tree-gift cards filling the gear height, so the column ends flush with gear and whispers. */
     private fun trees(f: ForagingData, width: Int): Component {
-        if (f.trees.isEmpty()) return Text("No tree gifts yet", Theme.TEXT_MUTED)
-        return Column(f.trees.map { treeCard(it.name, it.tier, it.gifts, width) }, spacing = 6)
+        if (f.trees.isEmpty()) return Frame(width, GEAR_H, Text("No tree gifts yet", Theme.TEXT_MUTED), hAlign = HAlign.START, vAlign = VAlign.TOP)
+        val h = PageKit.fillHeights(f.trees.size, GEAR_H, GAP)
+        return Column(f.trees.mapIndexed { i, t -> treeCard(t.name, t.tier, t.gifts, width, h[i]) }, spacing = GAP)
     }
 
-    private fun treeCard(name: String, tier: Int, gifts: Long, width: Int): Component {
+    private fun treeCard(name: String, tier: Int, gifts: Long, width: Int, h: Int): Component {
         val maxed = tier >= MILESTONE_MAX
         val tierColor = if (maxed) Theme.GOLD else Theme.ACCENT
-        val innerW = width - 24 - 5 - 8
+        val pad = 6
+        val iconSize = 20
         val body = Column(
-            SpaceBetween(innerW, Text(name, Theme.TEXT), Text("$tier/$MILESTONE_MAX", tierColor)),
-            ProgressBar(innerW, 3, tier.toDouble() / MILESTONE_MAX, tierColor, Theme.SURFACE_ALT),
-            Text("${Format.compact(gifts)} gifts", Theme.TEXT_MUTED),
-            spacing = 2,
+            Row(Text(name, Theme.TEXT), Text("$tier/$MILESTONE_MAX", tierColor), spacing = 8, align = VAlign.CENTER),
+            Row(
+                ProgressBar(120, 4, tier.toDouble() / MILESTONE_MAX, tierColor, Theme.SURFACE),
+                Text("${Format.compact(gifts)} gifts", Theme.TEXT_MUTED, scale = Text.SMALL),
+                spacing = 8,
+                align = VAlign.CENTER,
+            ),
+            spacing = 5,
         )
-        val row = Row(Item(giftIcon(name), 24, tooltip = false), body, spacing = 5, align = VAlign.CENTER)
-        return Frame(width, row.height + 8, Row(Spacer(4), row), Theme.SURFACE_ALT, Theme.BORDER, HAlign.START, VAlign.CENTER)
+        val row = Row(Item(giftIcon(name), iconSize, tooltip = false), body, spacing = 8, align = VAlign.CENTER)
+        return Frame(width, h, Row(Spacer(pad), row), Theme.SURFACE_ALT, Theme.BORDER, HAlign.START, VAlign.CENTER)
     }
 }

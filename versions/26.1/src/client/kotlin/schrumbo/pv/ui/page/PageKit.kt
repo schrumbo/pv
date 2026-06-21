@@ -128,4 +128,13 @@ object PageKit {
     }
 
     fun cellW(width: Int, cols: Int = 2, colGap: Int = 14): Int = (width - colGap * (cols - 1)) / cols
+
+    /** [n] near-equal box heights that, with [gap] between them, sum exactly to [total]. */
+    fun fillHeights(n: Int, total: Int, gap: Int): List<Int> {
+        if (n <= 0) return emptyList()
+        val avail = total - gap * (n - 1)
+        val base = avail / n
+        val rem = avail - base * n
+        return (0 until n).map { base + if (it < rem) 1 else 0 }
+    }
 }

@@ -51,8 +51,11 @@ object ProfileMapper {
             armor = armor(member),
             equipment = equipment(member),
             miningTools = scanGear(gear, MINING_TOOLS),
-            miningArmor = bestArmor(gear),
-            miningEquipment = bestEquipment(gear),
+            miningArmor = bestArmor(gear, MINING_ARMOR),
+            miningEquipment = bestEquipment(gear, MINING_EQUIPMENT),
+            foragingTools = scanGear(gear, FORAGING_TOOLS),
+            foragingArmor = bestArmor(gear, FORAGING_ARMOR),
+            foragingEquipment = bestEquipment(gear, FORAGING_EQUIPMENT),
             magicalPower = member.obj("accessory_bag_storage")?.num("highest_magical_power")?.toInt() ?: 0,
             selectedPower = member.obj("accessory_bag_storage")?.str("selected_power"),
             bank = profile.obj("banking")?.num("balance")?.toLong() ?: 0L,
@@ -313,6 +316,20 @@ object ProfileMapper {
             "AMETHYST_GAUNTLET", "DWARVEN_HANDWARMERS"),
     )
 
+    // Galatea / Foraging gear (NEU ids). Lists ordered worst → best so the index doubles as a score.
+    private val FORAGING_ARMOR = listOf(
+        "FIG_HELMET", "FIG_CHESTPLATE", "FIG_LEGGINGS", "FIG_BOOTS",
+    )
+    private val FORAGING_EQUIPMENT = listOf(
+        listOf("MANGROVE_LOCKET"),   // necklace
+        listOf("DAVIDS_CLOAK"),      // cloak
+        listOf<String>(),            // belt — no Foraging belt exists yet
+        listOf("MANGROVE_GRIPPERS"), // gloves
+    )
+    private val FORAGING_TOOLS = setOf(
+        "JUNGLE_AXE", "EFFICIENT_AXE", "FIG_AXE", "FIGSTONE_AXE",
+    )
+
     private val ARMOR_SLOTS = listOf("HELMET", "CHESTPLATE", "LEGGINGS", "BOOTS")
 
     /**
@@ -343,15 +360,15 @@ object ProfileMapper {
         gear.filter { it.second in ids }.distinctBy { it.second }.map { it.first }
 
     /** Best armor piece per slot (helmet, chestplate, leggings, boots); empty slot = no piece owned. */
-    private fun bestArmor(gear: List<Pair<ItemStack, String?>>): List<ItemStack> =
+    private fun bestArmor(gear: List<Pair<ItemStack, String?>>, armor: List<String>): List<ItemStack> =
         ARMOR_SLOTS.map { slot ->
-            gear.filter { it.second?.endsWith(slot) == true && it.second in MINING_ARMOR }
-                .maxByOrNull { MINING_ARMOR.indexOf(it.second) }?.first ?: ItemStack.EMPTY
+            gear.filter { it.second?.endsWith(slot) == true && it.second in armor }
+                .maxByOrNull { armor.indexOf(it.second) }?.first ?: ItemStack.EMPTY
         }
 
-    /** Best equipment per slot (necklace, cloak, belt, gloves); empty slot = no piece owned. */
-    private fun bestEquipment(gear: List<Pair<ItemStack, String?>>): List<ItemStack> =
-        MINING_EQUIPMENT.map { list ->
+    /** Best equipment per [slots] (each an ordered worst→best list); empty slot = no piece owned. */
+    private fun bestEquipment(gear: List<Pair<ItemStack, String?>>, slots: List<List<String>>): List<ItemStack> =
+        slots.map { list ->
             gear.filter { it.second in list }.maxByOrNull { list.indexOf(it.second) }?.first ?: ItemStack.EMPTY
         }
 
@@ -456,15 +473,19 @@ object ProfileMapper {
         val claimed = gifts?.obj("milestone_tier_claimed")
         val trees = gifts?.entrySet()
             ?.filter { (k, v) -> k != "milestone_tier_claimed" && v.isJsonPrimitive && v.asJsonPrimitive.isNumber }
-            ?.map { (key, value) -> TreeGift(prettify(key), value.asLong, claimed?.num(key)?.toInt() ?: 0) }
+            ?.map { (key, value) -> TreeGift(prettify(key.lowercase()), value.asLong, claimed?.num(key)?.toInt() ?: 0) }
             ?.sortedByDescending { it.gifts } ?: emptyList()
+        // HotF tier comes from the unified skill tree's xp (like HotM), not a `foraging_core` level field.
+        val hotfExp = member.obj("skill_tree")?.obj("experience")?.num("foraging")?.toLong() ?: 0L
+        val essence = member.obj("currencies")?.obj("essence")?.obj("FOREST")?.num("current")?.toLong() ?: 0L
         return ForagingData(
             whispers = fc?.num("forests_whispers")?.toLong() ?: 0L,
             whispersSpent = fc?.num("forests_whispers_spent")?.toLong() ?: 0L,
             dailyTrees = fc?.num("daily_trees_cut")?.toLong() ?: 0L,
             trees = trees,
             nodes = treeNodes(member, "foraging"),
-            hotfLevel = fc?.num("hotf_level")?.toInt() ?: 0,
+            essence = essence,
+            hotfLevel = hotmTier(hotfExp),
         )
     }
 

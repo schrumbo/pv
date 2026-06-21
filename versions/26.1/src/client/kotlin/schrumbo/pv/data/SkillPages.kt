@@ -106,6 +106,8 @@ data class ForagingData(
     val dailyTrees: Long,
     val trees: List<TreeGift>,
     val nodes: Map<String, Int>,
+    /** Foraging Essence held (`currencies.essence.FORAGING.current`). */
+    val essence: Long,
     /** Heart-of-the-Forest tier, for perk rewards that scale with it. */
     val hotfLevel: Int,
 )

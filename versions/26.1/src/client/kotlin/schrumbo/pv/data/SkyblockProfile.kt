@@ -86,6 +86,12 @@ data class SkyblockProfile(
     val miningArmor: List<ItemStack>,
     /** Best mining equipment per slot (necklace, cloak, belt, gloves) found anywhere. */
     val miningEquipment: List<ItemStack>,
+    /** Foraging axes found anywhere in the profile, for the Foraging gear view. */
+    val foragingTools: List<ItemStack>,
+    /** Best foraging armor piece per slot (helmet, chestplate, leggings, boots) found anywhere. */
+    val foragingArmor: List<ItemStack>,
+    /** Best foraging equipment per slot (necklace, cloak, belt, gloves) found anywhere. */
+    val foragingEquipment: List<ItemStack>,
     val magicalPower: Int,
     val selectedPower: String?,
     val bank: Long,

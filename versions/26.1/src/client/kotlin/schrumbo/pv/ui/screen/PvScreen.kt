@@ -50,6 +50,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
     private var combatSub = CombatPage.Sub.BESTIARY
     private var miningSub = 0
     private var foragingSub = 0
+    private var farmingSub = 0
     private var bestiaryIsland = 0
     private var collectionCategory = 0
     private var inventoryTab = 0
@@ -409,7 +410,8 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
             }
             Page.COLLECTIONS -> CollectionsPage.subTabs(s.profiles[profileIndex.coerceIn(0, s.profiles.size - 1)])
             Page.MINING -> listOf(icon("stone_pickaxe") to "General", MiningPage.hotmIcon to "HotM Tree")
-            Page.FORAGING -> listOf(icon("netherite_axe") to "General", ForagingPage.hotfIcon to "HotF Tree")
+            Page.FORAGING -> listOf(icon("jungle_sapling") to "General", ForagingPage.hotfIcon to "HotF Tree")
+            Page.FARMING -> listOf(icon("golden_hoe") to "General", icon("fern") to "Greenhouse", icon("composter") to "Composter")
             else -> emptyList()
         }
     }
@@ -420,6 +422,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         Page.COLLECTIONS -> collectionCategory
         Page.MINING -> miningSub
         Page.FORAGING -> foragingSub
+        Page.FARMING -> farmingSub
         else -> 0
     }
 
@@ -430,6 +433,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
             Page.COLLECTIONS -> { collectionCategory = i; resetScroll("COLLECTIONS") }
             Page.MINING -> { miningSub = i; resetScroll("MINING", "MINING_TREE") }
             Page.FORAGING -> { foragingSub = i; resetScroll("FORAGING", "FORAGING_TREE") }
+            Page.FARMING -> { farmingSub = i; resetScroll("FARMING", "FARMING_GH", "FARMING_COMP") }
             else -> {}
         }
     }
@@ -472,7 +476,11 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
             ProfileService.loadGarden(pid) { g -> gardens[pid] = g }
         }
         val garden = gardens[pid]
-        renderScrolled(ctx, x, y, width, height, mouseX, mouseY) { w, _ -> FarmingPage.build(p, garden, w) }
+        when (farmingSub) {
+            1 -> renderScrolled(ctx, x, y, width, height, mouseX, mouseY, "FARMING_GH") { w, _ -> FarmingPage.greenhouse(p, w) }
+            2 -> renderScrolled(ctx, x, y, width, height, mouseX, mouseY, "FARMING_COMP") { w, _ -> FarmingPage.composter(garden, w) }
+            else -> renderScrolled(ctx, x, y, width, height, mouseX, mouseY, "FARMING") { w, _ -> FarmingPage.general(p, garden, w) }
+        }
     }
 
     /** Renders a page that needs no per-page state — built from the active profile and width. */

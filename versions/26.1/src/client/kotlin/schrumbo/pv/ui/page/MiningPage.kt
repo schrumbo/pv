@@ -9,13 +9,11 @@ import schrumbo.pv.data.SkillTreeRegistry
 import schrumbo.pv.data.SkyblockProfile
 import schrumbo.pv.render.SkullItems
 import schrumbo.pv.ui.Theme
-import schrumbo.pv.ui.component.Box
 import schrumbo.pv.ui.component.Column
 import schrumbo.pv.ui.component.Component
 import schrumbo.pv.ui.component.Frame
 import schrumbo.pv.ui.component.HAlign
 import schrumbo.pv.ui.component.Item
-import schrumbo.pv.ui.component.Overlay
 import schrumbo.pv.ui.component.Row
 import schrumbo.pv.ui.component.SpaceBetween
 import schrumbo.pv.ui.component.Spacer
@@ -53,22 +51,24 @@ object MiningPage {
 
     private const val SLOT = 20
     private const val GAP = 2
+    private const val GEAR_ROWS = 4
     private const val GEAR_W = SLOT * 3 + GAP * 2
+    private const val GEAR_H = SLOT * GEAR_ROWS + GAP * (GEAR_ROWS - 1)
     private const val POWDER_W = 92
     private const val TOP_GAP = 18
 
-    /** General sub-page: gear · powder · crystals side by side up top, stats and Glacite below. */
+    /** General sub-page: gear · powder · (crystals + fossils) up top, stats and Glacite below. */
     fun general(p: SkyblockProfile, width: Int): Component {
         val m = p.mining
         val crystalsW = (width - GEAR_W - POWDER_W - TOP_GAP * 2).coerceAtLeast(120)
+        // Fossils tuck into the empty space under the crystals so the rows below don't shift down.
+        val right = Column(crystals(m, crystalsW), Spacer(0, 8), fossilsRow(m, crystalsW), spacing = 0)
         return Column(
             PageKit.skillHeader(p, SkillType.MINING, width),
             Spacer(0, 12),
-            Row(gear(p), powderColumn(m), crystals(m, crystalsW), spacing = TOP_GAP, align = VAlign.TOP),
-            Spacer(0, 16),
+            Row(gear(p), powderColumn(m), right, spacing = TOP_GAP, align = VAlign.TOP),
+            Spacer(0, 14),
             statsRow(m, width),
-            Spacer(0, 12),
-            fossilsRow(m, width),
             Spacer(0, 12),
             glacite(m, width),
             spacing = 0,
@@ -85,30 +85,26 @@ object MiningPage {
         ),
     )
 
-    /** Translucent grey wash drawn over a fossil head that hasn't been donated yet. */
-    private val FOSSIL_DIM = 0xB0141414.toInt()
+    private val GRAY_DYE: ItemStack by lazy { PageKit.icon("gray_dye") }
 
-    /** All fossils as their real heads, centred; un-donated ones are dimmed grey. */
+    /** All fossils as their real heads, centred; un-donated ones are replaced by a grey dye. */
     private fun fossilsRow(m: MiningData, width: Int): Component {
         val row = Row(
             Fossils.all.map { f ->
                 // The API stores the short key (CLAW, FOOTPRINT, …), not the full item id (CLAW_FOSSIL).
                 val donated = f.id.substringBefore("_") in m.donatedFossils
-                val head = Item(SkullItems.fromTexture(f.texture), SLOT - 4, tooltip = false)
-                val inner: Component = if (donated) head else Overlay(head, Box(SLOT - 4, SLOT - 4, FOSSIL_DIM))
+                val icon = if (donated) SkullItems.fromTexture(f.texture) else GRAY_DYE
                 val tip = listOf(
                     (if (donated) "§a" else "§7") + f.name,
                     "",
                     if (donated) "§a§lDONATED" else "§7§lNot donated",
                 )
-                Tooltip(Frame(SLOT, SLOT, inner, Theme.SURFACE_ALT, Theme.BORDER, HAlign.CENTER, VAlign.CENTER), tip)
+                Tooltip(Frame(SLOT, SLOT, Item(icon, SLOT - 4, tooltip = false), Theme.SURFACE_ALT, Theme.BORDER, HAlign.CENTER, VAlign.CENTER), tip)
             },
             spacing = GAP,
         )
         return Frame(width, row.height, row, hAlign = HAlign.CENTER, vAlign = VAlign.TOP)
     }
-
-    private const val GEAR_ROWS = 4
 
     /** Gear as a clean 3×4 grid: armor · equipment · drills, every column padded to [GEAR_ROWS]. */
     private fun gear(p: SkyblockProfile): Component = Row(
@@ -133,23 +129,21 @@ object MiningPage {
         return Frame(width, grid.height, grid, hAlign = HAlign.CENTER, vAlign = VAlign.TOP)
     }
 
-    /** Powder chips stacked beside the gear: icon + centred total (available + spent), no label. */
-    private fun powderColumn(m: MiningData): Component = Column(
-        powderChip("Mithril", Format.compact(m.mithrilCount), MITHRIL, "prismarine_crystals"),
-        powderChip("Gemstone", Format.compact(m.gemstoneCount), GEMSTONE, "amethyst_shard"),
-        powderChip("Glacite", Format.compact(m.glaciteCount), GLACITE, "blue_ice"),
-        spacing = GAP,
-    )
-
-    private fun powderChip(label: String, value: String, color: Int, iconId: String): Component {
-        val body = Column(
-            Item(PageKit.icon(iconId), 14, tooltip = false),
-            Text(value, color),
-            spacing = 3,
-            align = HAlign.CENTER,
+    /** Powder chips stacked beside the gear, sized so the column ends flush with the gear grid. */
+    private fun powderColumn(m: MiningData): Component {
+        val h = PageKit.fillHeights(3, GEAR_H, GAP)
+        return Column(
+            powderChip(h[0], "Mithril", Format.compact(m.mithrilCount), MITHRIL, "prismarine_crystals"),
+            powderChip(h[1], "Gemstone", Format.compact(m.gemstoneCount), GEMSTONE, "amethyst_shard"),
+            powderChip(h[2], "Glacite", Format.compact(m.glaciteCount), GLACITE, "blue_ice"),
+            spacing = GAP,
         )
+    }
+
+    private fun powderChip(h: Int, label: String, value: String, color: Int, iconId: String): Component {
+        val body = Row(Item(PageKit.icon(iconId), 12, tooltip = false), Text(value, color), spacing = 5, align = VAlign.CENTER)
         return Tooltip(
-            Frame(POWDER_W, body.height + 10, body, Theme.SURFACE_ALT, Theme.BORDER, HAlign.CENTER, VAlign.CENTER),
+            Frame(POWDER_W, h, body, Theme.SURFACE_ALT, Theme.BORDER, HAlign.CENTER, VAlign.CENTER),
             listOf("§f$label Powder", "§7$value §8earned"),
         )
     }
