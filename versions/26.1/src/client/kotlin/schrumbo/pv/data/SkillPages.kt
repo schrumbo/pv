@@ -18,8 +18,15 @@ data class MiningData(
     val nodes: Map<String, Int>,
     val crystals: List<CrystalState>,
     val corpses: List<Pair<String, Long>>,
-    val fossilsDonated: Int,
+    /** Fossil ids the player has donated (Glacite `fossils_donated`). */
+    val donatedFossils: Set<String>,
     val mineshafts: Long,
+    /** Crystal Nucleus runs completed (min total_placed over the five nucleus-run crystals). */
+    val nucleusRuns: Long,
+    /** Total commissions completed (account-wide, from the `skyblock_hard_working_miner` achievement). */
+    val commissions: Long,
+    /** Heart-of-the-Mountain tier (1–10), for perk rewards that scale with it. */
+    val hotmLevel: Int,
 ) {
     /** Powder count the player has "earned" = currently available + already spent in the tree. */
     val mithrilCount: Long get() = mithril + mithrilSpent
@@ -99,6 +106,8 @@ data class ForagingData(
     val dailyTrees: Long,
     val trees: List<TreeGift>,
     val nodes: Map<String, Int>,
+    /** Heart-of-the-Forest tier, for perk rewards that scale with it. */
+    val hotfLevel: Int,
 )
 
 /** The Rift dimension summary for the Rift page. */

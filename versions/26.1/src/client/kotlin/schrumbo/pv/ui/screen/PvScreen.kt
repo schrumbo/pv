@@ -48,6 +48,8 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
     private var page = Page.GENERAL
     private var dungeonMaster = false
     private var combatSub = CombatPage.Sub.BESTIARY
+    private var miningSub = 0
+    private var foragingSub = 0
     private var bestiaryIsland = 0
     private var collectionCategory = 0
     private var inventoryTab = 0
@@ -261,7 +263,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
             ctx.fill(x + tabW - 1, topY, x + tabW, lineY, Theme.BORDER)
 
             val iy = topY + (tabH - iconSize) / 2
-            ItemRenderUtils.renderItem(ctx, icon(p.icon), x + padX, iy, iconSize / 16f)
+            ItemRenderUtils.renderItem(ctx, pageIcon(p), x + padX, iy, iconSize / 16f)
             if (active) {
                 ctx.text(font, p.title, x + padX + iconSize + 3, topY + (tabH - font.lineHeight) / 2 + 2, Theme.TEXT, false)
             } else if (hovered) {
@@ -277,6 +279,10 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         return ItemStack(BuiltInRegistries.ITEM.getValue(id))
     }
 
+    /** A page's tab icon: its textured skull head when it has one, else the vanilla item. */
+    private fun pageIcon(p: Page): ItemStack =
+        p.skullTexture?.let { schrumbo.pv.render.SkullItems.fromTexture(it) }?.takeIf { !it.isEmpty } ?: icon(p.icon)
+
     private fun renderContent(
         ctx: GuiGraphicsExtractor, x: Int, y: Int, width: Int, height: Int, mouseX: Int, mouseY: Int,
     ) {
@@ -288,11 +294,11 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
                 Page.COMBAT -> renderCombat(ctx, s, x, y, width, height, mouseX, mouseY)
                 Page.CATACOMBS -> renderDungeons(ctx, s, x, y, width, height, mouseX, mouseY)
                 Page.COLLECTIONS -> renderCollections(ctx, s, x, y, width, height, mouseX, mouseY)
-                Page.MINING -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> MiningPage.build(p, w) }
+                Page.MINING -> renderMining(ctx, s, x, y, width, height, mouseX, mouseY)
                 Page.FISHING -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> FishingPage.build(p, w) }
                 Page.FARMING -> renderFarming(ctx, s, x, y, width, height, mouseX, mouseY)
                 Page.HUNTING -> renderHunting(ctx, s, x, y, width, height, mouseX, mouseY)
-                Page.FORAGING -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> ForagingPage.build(p, w) }
+                Page.FORAGING -> renderForaging(ctx, s, x, y, width, height, mouseX, mouseY)
                 Page.PETS -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> PetsPage.build(p, w) }
                 Page.INVENTORY -> renderInventory(ctx, s, x, y, width, height, mouseX, mouseY)
                 Page.RIFT -> renderStatic(ctx, s, x, y, width, height, mouseX, mouseY) { p, w -> RiftPage.build(p, w) }
@@ -402,6 +408,8 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
                 if (InventoryPage.isEmpty(p)) emptyList() else InventoryPage.subTabs(p)
             }
             Page.COLLECTIONS -> CollectionsPage.subTabs(s.profiles[profileIndex.coerceIn(0, s.profiles.size - 1)])
+            Page.MINING -> listOf(icon("stone_pickaxe") to "General", MiningPage.hotmIcon to "HotM Tree")
+            Page.FORAGING -> listOf(icon("netherite_axe") to "General", ForagingPage.hotfIcon to "HotF Tree")
             else -> emptyList()
         }
     }
@@ -410,6 +418,8 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         Page.COMBAT -> combatSub.ordinal
         Page.INVENTORY -> inventoryTab
         Page.COLLECTIONS -> collectionCategory
+        Page.MINING -> miningSub
+        Page.FORAGING -> foragingSub
         else -> 0
     }
 
@@ -418,6 +428,8 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
             Page.COMBAT -> { combatSub = CombatPage.Sub.entries[i]; resetScroll("COMBAT", "mobs_kills", "mobs_deaths", "crimson") }
             Page.INVENTORY -> { inventoryTab = i; containerPage = 0; resetScroll("INVENTORY") }
             Page.COLLECTIONS -> { collectionCategory = i; resetScroll("COLLECTIONS") }
+            Page.MINING -> { miningSub = i; resetScroll("MINING", "MINING_TREE") }
+            Page.FORAGING -> { foragingSub = i; resetScroll("FORAGING", "FORAGING_TREE") }
             else -> {}
         }
     }
@@ -471,6 +483,26 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
     ) {
         val index = profileIndex.coerceIn(0, s.profiles.size - 1)
         renderScrolled(ctx, x, y, width, height, mouseX, mouseY) { w, _ -> build(s.profiles[index], w) }
+    }
+
+    /** Mining tab: General sub-page or the centred HotM tree, picked by the left rail. */
+    private fun renderMining(
+        ctx: GuiGraphicsExtractor, s: ProfileState.Loaded,
+        x: Int, y: Int, width: Int, height: Int, mouseX: Int, mouseY: Int,
+    ) {
+        val p = s.profiles[profileIndex.coerceIn(0, s.profiles.size - 1)]
+        if (miningSub == 0) renderScrolled(ctx, x, y, width, height, mouseX, mouseY, "MINING") { w, _ -> MiningPage.general(p, w) }
+        else renderScrolled(ctx, x, y, width, height, mouseX, mouseY, "MINING_TREE", centerY = true) { w, _ -> MiningPage.tree(p, w) }
+    }
+
+    /** Foraging tab: General sub-page or the centred HotF tree, picked by the left rail. */
+    private fun renderForaging(
+        ctx: GuiGraphicsExtractor, s: ProfileState.Loaded,
+        x: Int, y: Int, width: Int, height: Int, mouseX: Int, mouseY: Int,
+    ) {
+        val p = s.profiles[profileIndex.coerceIn(0, s.profiles.size - 1)]
+        if (foragingSub == 0) renderScrolled(ctx, x, y, width, height, mouseX, mouseY, "FORAGING") { w, _ -> ForagingPage.general(p, w) }
+        else renderScrolled(ctx, x, y, width, height, mouseX, mouseY, "FORAGING_TREE", centerY = true) { w, _ -> ForagingPage.tree(p, w) }
     }
 
     private fun renderHunting(

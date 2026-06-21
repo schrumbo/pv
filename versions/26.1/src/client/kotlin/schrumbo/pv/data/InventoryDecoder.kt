@@ -10,6 +10,7 @@ import net.minecraft.resources.Identifier
 import net.minecraft.world.item.ItemStack
 import net.minecraft.world.item.Items
 import net.minecraft.world.item.alchemy.PotionContents
+import net.minecraft.world.item.component.CustomData
 import net.minecraft.world.item.component.DyedItemColor
 import net.minecraft.world.item.component.ItemLore
 import net.minecraft.world.item.component.ResolvableProfile
@@ -164,8 +165,33 @@ object InventoryDecoder {
                 .onFailure { schrumbo.pv.core.PvClient.LOGGER.warn("[pv] applyPotion failed", it) }
             runCatching { applySkin(stack, tag) }
                 .onFailure { schrumbo.pv.core.PvClient.LOGGER.warn("[pv] applySkin failed", it) }
+            runCatching { applyId(stack, tag) }.getOrNull()
         }
         return stack
+    }
+
+    /** Stashes the Skyblock item id (`ExtraAttributes.id`) so features like gear scanning can read it. */
+    private fun applyId(stack: ItemStack, tag: CompoundTag) {
+        val id = tag.getCompound("ExtraAttributes").orElse(null)?.getString("id")?.orElse(null) ?: return
+        stack.set(DataComponents.CUSTOM_DATA, CustomData.of(CompoundTag().apply { putString("pv_id", id) }))
+    }
+
+    /** The Skyblock item id stashed on a decoded stack, or null. */
+    fun skyblockId(stack: ItemStack): String? =
+        stack.get(DataComponents.CUSTOM_DATA)?.copyTag()?.getString("pv_id")?.orElse(null)
+
+    /** Decodes items, reading each one's Skyblock id (`tag.ExtraAttributes.id`) straight from the NBT. */
+    fun decodeWithIds(base64Gzip: String): List<Pair<ItemStack, String?>> {
+        val list = runCatching {
+            val bytes = Base64.getDecoder().decode(base64Gzip.trim())
+            NbtIo.readCompressed(ByteArrayInputStream(bytes), NbtAccounter.unlimitedHeap()).getListOrEmpty("i")
+        }.getOrNull() ?: return emptyList()
+        return (0 until list.size).map { i ->
+            val c = list.getCompoundOrEmpty(i)
+            val id = c.getCompound("tag").orElse(null)
+                ?.getCompound("ExtraAttributes")?.orElse(null)?.getString("id")?.orElse(null)
+            runCatching { toStack(c) }.getOrDefault(ItemStack.EMPTY) to id
+        }
     }
 
     private fun applyDisplay(stack: ItemStack, tag: CompoundTag) {

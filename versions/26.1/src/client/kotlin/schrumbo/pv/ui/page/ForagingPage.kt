@@ -34,23 +34,28 @@ object ForagingPage {
     private fun giftIcon(name: String): ItemStack =
         GIFT_TEX[name]?.let { SkullItems.fromTexture(it) } ?: PageKit.icon("oak_log")
 
-    fun build(p: SkyblockProfile, width: Int): Component {
+    private const val HOTF_TEX = "ewogICJ0aW1lc3RhbXAiIDogMTcxNzAyMTQ2Njk1NSwKICAicHJvZmlsZUlkIiA6ICIzZGE2ZDgxOTI5MTY0MTNlODhlNzg2MjQ3NzA4YjkzZSIsCiAgInByb2ZpbGVOYW1lIiA6ICJGZXJTdGlsZSIsCiAgInNpZ25hdHVyZVJlcXVpcmVkIiA6IHRydWUsCiAgInRleHR1cmVzIiA6IHsKICAgICJTS0lOIiA6IHsKICAgICAgInVybCIgOiAiaHR0cDovL3RleHR1cmVzLm1pbmVjcmFmdC5uZXQvdGV4dHVyZS81ZWY1MzliMTY1MTI1Y2ZhNDZiMDZmZmI5NjU5ZTdjZjg5MDg0YmJkM2VkZTFiMzE0ZWRjOGY0NDMzNDNkNjFjIiwKICAgICAgIm1ldGFkYXRhIiA6IHsKICAgICAgICAibW9kZWwiIDogInNsaW0iCiAgICAgIH0KICAgIH0KICB9Cn0="
+
+    /** Heart-of-the-Forest head, for the tree sub-tab icon. */
+    val hotfIcon: ItemStack by lazy { SkullItems.fromTexture(HOTF_TEX) }
+
+    /** General sub-page: skill header, forest whispers and tree gifts (full width). */
+    fun general(p: SkyblockProfile, width: Int): Component {
         val f = p.foraging
-        val tree = SkillTreeView.resolve(SkillTreeRegistry.foraging, f.nodes)
-        val grid = SkillTreeView.grid(tree)
         val total = f.whispers + f.whispersSpent
-        val rw = (width - grid.width - 16).coerceAtLeast(150)
-        val right = Column(
-            whispersChip(rw, total),
-            trees(f, rw),
-            spacing = 8,
-        )
         return Column(
             PageKit.skillHeader(p, SkillType.FORAGING, width),
-            Spacer(0, 4),
-            Row(grid, right, spacing = 16, align = VAlign.TOP),
-            spacing = 8,
+            Spacer(0, 6),
+            Row(whispersChip((width - 12) / 3, total)),
+            trees(f, width),
+            spacing = 12,
         )
+    }
+
+    /** HotF tree sub-page: the perk tree with in-game-style tooltips, centred. */
+    fun tree(p: SkyblockProfile, width: Int): Component {
+        val grid = PerkTreeView.render(schrumbo.pv.data.PerkRegistry.hotf, p.foraging.nodes, p.foraging.hotfLevel, PerkTreeView.FORAGING)
+        return Frame(width, grid.height, grid, hAlign = HAlign.CENTER, vAlign = VAlign.TOP)
     }
 
     /** Compact whispers chip mirroring the mining powder chips; value is earned total. */

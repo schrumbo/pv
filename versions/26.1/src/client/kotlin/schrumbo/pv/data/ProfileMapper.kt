@@ -8,21 +8,22 @@ import schrumbo.pv.util.Leveling
 object ProfileMapper {
 
     /** All profiles the player is a member of, plus the index of the selected one (or 0). */
-    fun mapAll(profilesResponse: JsonObject, uuid: String): Pair<List<SkyblockProfile>, Int> {
+    fun mapAll(profilesResponse: JsonObject, uuid: String, commissions: Long = 0L): Pair<List<SkyblockProfile>, Int> {
         val profiles = profilesResponse.array("profiles") ?: return emptyList<SkyblockProfile>() to 0
         val members = profiles.filter { it.isJsonObject }.map { it.asJsonObject }.filter { it.obj("members")?.has(uuid) == true }
         if (members.isEmpty()) return emptyList<SkyblockProfile>() to 0
 
         val selected = members.indexOfFirst { it.bool("selected") }.coerceAtLeast(0)
-        val mapped = members.mapNotNull { mapOne(it, uuid) }
+        val mapped = members.mapNotNull { mapOne(it, uuid, commissions) }
         return mapped to selected.coerceIn(0, (mapped.size - 1).coerceAtLeast(0))
     }
 
-    private fun mapOne(profile: JsonObject, uuid: String): SkyblockProfile? {
+    private fun mapOne(profile: JsonObject, uuid: String, commissions: Long): SkyblockProfile? {
         val member = profile.obj("members")?.obj(uuid) ?: return null
         val skills = skills(member)
         val dungeons = dungeons(member)
         val gpd = member.obj("garden_player_data")
+        val gear = gearItems(member)
         return SkyblockProfile(
             profileId = profile.str("profile_id") ?: "",
             cuteName = profile.str("cute_name") ?: "?",
@@ -36,7 +37,7 @@ object ProfileMapper {
             bestiaryKills = bestiaryKills(member),
             combat = combat(member),
             collections = collections(member),
-            mining = mining(member),
+            mining = mining(member, commissions),
             trophy = trophyFish(member),
             jacobs = jacobs(member),
             attributes = attributes(member),
@@ -49,6 +50,9 @@ object ProfileMapper {
             wardrobeSlot = (member.obj("inventory")?.num("wardrobe_equipped_slot") ?: member.num("wardrobe_equipped_slot"))?.toInt() ?: -1,
             armor = armor(member),
             equipment = equipment(member),
+            miningTools = scanGear(gear, MINING_TOOLS),
+            miningArmor = bestArmor(gear),
+            miningEquipment = bestEquipment(gear),
             magicalPower = member.obj("accessory_bag_storage")?.num("highest_magical_power")?.toInt() ?: 0,
             selectedPower = member.obj("accessory_bag_storage")?.str("selected_power"),
             bank = profile.obj("banking")?.num("balance")?.toLong() ?: 0L,
@@ -226,14 +230,27 @@ object ProfileMapper {
         "INK_SACK:3" to "Cocoa Beans",
     )
 
-    private fun mining(member: JsonObject): MiningData {
+    /** All Crystal Hollows / Glacite crystals, in display order (nucleus run, gemstones, glacite). */
+    private val CRYSTAL_ORDER = listOf(
+        "jade", "amethyst", "topaz", "sapphire", "amber", "ruby",
+        "jasper", "opal", "aquamarine", "citrine", "peridot", "onyx",
+    )
+
+    /** The five crystals placed for a Crystal Nucleus run; the min of their placements = runs done. */
+    private val NUCLEUS_CRYSTALS = listOf("jade", "amethyst", "topaz", "sapphire", "amber")
+
+    private fun mining(member: JsonObject, commissions: Long): MiningData {
         val mc = member.obj("mining_core")
         val glacite = member.obj("glacite_player_data")
-        val crystals = mc?.obj("crystals")?.entrySet()?.map { (key, value) ->
-            CrystalState(prettify(key.removeSuffix("_crystal")), value.takeIf { it.isJsonObject }?.asJsonObject?.str("state") ?: "NOT_FOUND")
-        } ?: emptyList()
+        val crystalData = mc?.obj("crystals")
+        val crystals = CRYSTAL_ORDER.map { key ->
+            CrystalState(prettify(key), crystalData?.obj("${key}_crystal")?.str("state") ?: "NOT_FOUND")
+        }
         val corpses = glacite?.obj("corpses_looted")?.entrySet()
             ?.map { (key, value) -> prettify(key) to (value.asLong) } ?: emptyList()
+        val nucleusRuns = NUCLEUS_CRYSTALS
+            .map { crystalData?.obj("${it}_crystal")?.num("total_placed")?.toLong() ?: 0L }
+            .minOrNull() ?: 0L
         return MiningData(
             mithril = mc?.num("powder_mithril")?.toLong() ?: 0L,
             mithrilTotal = mc?.num("powder_mithril_total")?.toLong() ?: 0L,
@@ -248,10 +265,99 @@ object ProfileMapper {
             nodes = treeNodes(member, "mining", mc),
             crystals = crystals,
             corpses = corpses,
-            fossilsDonated = glacite?.array("fossils_donated")?.size() ?: 0,
+            donatedFossils = glacite?.array("fossils_donated")?.mapNotNull { it.asString }?.toSet() ?: emptySet(),
             mineshafts = glacite?.num("mineshafts_entered")?.toLong() ?: 0L,
+            nucleusRuns = nucleusRuns,
+            commissions = commissions,
+            hotmLevel = hotmTier(
+                member.obj("skill_tree")?.obj("experience")?.num("mining")?.toLong()
+                    ?: mc?.num("experience")?.toLong() ?: 0L,
+            ),
         )
     }
+
+    // Authoritative mining-gear ids from meowdding-repo (repo/pv/gear/mining.json). The armor and
+    // equipment lists are ordered by progression (worst → best) so the list index doubles as a score.
+    private val MINING_TOOLS = setOf(
+        "TITANIUM_PICKAXE", "RUSTY_TITANIUM_PICKAXE", "JUNGLE_PICKAXE", "WOOD_PICKAXE", "LAPIS_PICKAXE",
+        "BANDAGED_MITHRIL_PICKAXE", "MITHRIL_PICKAXE", "REFINED_MITHRIL_PICKAXE", "IRON_PICKAXE", "GOLD_PICKAXE",
+        "ZOMBIE_PICKAXE", "ALPHA_PICK", "PROMISING_PICKAXE", "DIAMOND_PICKAXE", "PICKONIMBUS",
+        "REFINED_TITANIUM_PICKAXE", "FRACTURED_MITHRIL_PICKAXE", "STONE_PICKAXE", "ROOKIE_PICKAXE",
+        "MITHRIL_DRILL_1", "MITHRIL_DRILL_2", "TITANIUM_DRILL_1", "TITANIUM_DRILL_2", "TITANIUM_DRILL_3",
+        "TITANIUM_DRILL_4", "GEMSTONE_DRILL_1", "GEMSTONE_DRILL_2", "GEMSTONE_DRILL_3", "GEMSTONE_DRILL_4",
+        "DIVAN_DRILL", "GEMSTONE_GAUNTLET", "CHISEL", "REINFORCED_CHISEL", "GLACITE_CHISEL", "PERFECT_CHISEL",
+    )
+
+    private val MINING_ARMOR = listOf(
+        "MINER_OUTFIT_HELMET", "MINER_OUTFIT_CHESTPLATE", "MINER_OUTFIT_LEGGINGS", "MINER_OUTFIT_BOOTS",
+        "LAPIS_ARMOR_HELMET", "LAPIS_ARMOR_CHESTPLATE", "LAPIS_ARMOR_LEGGINGS", "LAPIS_ARMOR_BOOTS",
+        "TANK_MINER_HELMET", "TANK_MINER_CHESTPLATE", "TANK_MINER_LEGGINGS", "TANK_MINER_BOOTS",
+        "HARDENED_DIAMOND_HELMET", "HARDENED_DIAMOND_CHESTPLATE", "HARDENED_DIAMOND_LEGGINGS", "HARDENED_DIAMOND_BOOTS",
+        "MINERAL_HELMET", "MINERAL_CHESTPLATE", "MINERAL_LEGGINGS", "MINERAL_BOOTS",
+        "GLOSSY_MINERAL_HELMET", "GLOSSY_MINERAL_CHESTPLATE", "GLOSSY_MINERAL_LEGGINGS", "GLOSSY_MINERAL_BOOTS",
+        "GOBLIN_HELMET", "GOBLIN_CHESTPLATE", "GOBLIN_LEGGINGS", "GOBLIN_BOOTS",
+        "GLACITE_HELMET", "GLACITE_CHESTPLATE", "GLACITE_LEGGINGS", "GLACITE_BOOTS",
+        "HEAT_HELMET", "HEAT_CHESTPLATE", "HEAT_LEGGINGS", "HEAT_BOOTS",
+        "ARMOR_OF_YOG_HELMET", "ARMOR_OF_YOG_CHESTPLATE", "ARMOR_OF_YOG_LEGGINGS", "ARMOR_OF_YOG_BOOTS",
+        "FLAME_BREAKER_HELMET", "FLAME_BREAKER_CHESTPLATE", "FLAME_BREAKER_LEGGINGS", "FLAME_BREAKER_BOOTS",
+        "SORROW_HELMET", "SORROW_CHESTPLATE", "SORROW_LEGGINGS", "SORROW_BOOTS",
+        "DIVAN_HELMET", "DIVAN_CHESTPLATE", "DIVAN_LEGGINGS", "DIVAN_BOOTS",
+    )
+
+    /** Mining equipment id lists per slot, in display order: necklace, cloak, belt, gloves. */
+    private val MINING_EQUIPMENT = listOf(
+        listOf("MITHRIL_NECKLACE", "TITANIUM_NECKLACE", "AMBER_NECKLACE", "DIVAN_PENDANT"),
+        listOf("ANCIENT_CLOAK", "MITHRIL_CLOAK", "TITANIUM_CLOAK", "SAPPHIRE_CLOAK"),
+        listOf("MITHRIL_BELT", "TITANIUM_BELT", "JADE_BELT"),
+        listOf("GLOWSTONE_GAUNTLET", "VANQUISHED_GLOWSTONE_GAUNTLET", "MITHRIL_GAUNTLET", "TITANIUM_GAUNTLET",
+            "AMETHYST_GAUNTLET", "DWARVEN_HANDWARMERS"),
+    )
+
+    private val ARMOR_SLOTS = listOf("HELMET", "CHESTPLATE", "LEGGINGS", "BOOTS")
+
+    /**
+     * Every (stack, id) pair across the player's inventory, equipped slots, ender chest, personal vault,
+     * backpacks and wardrobe — the search space for gear scanning. Wardrobe sets are flattened in.
+     */
+    private fun gearItems(member: JsonObject): List<Pair<ItemStack, String?>> {
+        val inv = member.obj("inventory") ?: return emptyList()
+        val sources = mutableListOf<String>()
+        inv.obj("inv_contents")?.str("data")?.let { sources += it }
+        inv.obj("inv_armor")?.str("data")?.let { sources += it }
+        inv.obj("equipment_contents")?.str("data")?.let { sources += it }
+        inv.obj("ender_chest_contents")?.str("data")?.let { sources += it }
+        inv.obj("personal_vault_contents")?.str("data")?.let { sources += it }
+        inv.obj("backpack_contents")?.entrySet()?.forEach { (_, v) ->
+            if (v.isJsonObject) v.asJsonObject.str("data")?.let { sources += it }
+        }
+        val items = sources.flatMap { InventoryDecoder.decodeWithIds(it) }.toMutableList()
+        member.obj("loadout")?.obj("armor")?.entrySet()?.forEach { (_, set) ->
+            val o = set.takeIf { it.isJsonObject }?.asJsonObject ?: return@forEach
+            ARMOR_SLOTS.forEach { piece -> o.obj(piece)?.str("data")?.let { items += InventoryDecoder.decodeWithIds(it) } }
+        }
+        return items.filter { !it.first.isEmpty }
+    }
+
+    /** Distinct items from [gear] whose id is in [ids], one per id. */
+    private fun scanGear(gear: List<Pair<ItemStack, String?>>, ids: Set<String>): List<ItemStack> =
+        gear.filter { it.second in ids }.distinctBy { it.second }.map { it.first }
+
+    /** Best armor piece per slot (helmet, chestplate, leggings, boots); empty slot = no piece owned. */
+    private fun bestArmor(gear: List<Pair<ItemStack, String?>>): List<ItemStack> =
+        ARMOR_SLOTS.map { slot ->
+            gear.filter { it.second?.endsWith(slot) == true && it.second in MINING_ARMOR }
+                .maxByOrNull { MINING_ARMOR.indexOf(it.second) }?.first ?: ItemStack.EMPTY
+        }
+
+    /** Best equipment per slot (necklace, cloak, belt, gloves); empty slot = no piece owned. */
+    private fun bestEquipment(gear: List<Pair<ItemStack, String?>>): List<ItemStack> =
+        MINING_EQUIPMENT.map { list ->
+            gear.filter { it.second in list }.maxByOrNull { list.indexOf(it.second) }?.first ?: ItemStack.EMPTY
+        }
+
+    /** Cumulative HotM xp → tier (1–10). */
+    private val HOTM_XP = longArrayOf(3000, 12000, 37000, 97000, 197000, 347000, 557000, 847000, 1247000)
+    private fun hotmTier(exp: Long): Int = 1 + HOTM_XP.count { exp >= it }
 
     /**
      * Perk-tree node levels (`id -> level`) for a skill. The unified `skill_tree.nodes.<skill>` is
@@ -358,6 +464,7 @@ object ProfileMapper {
             dailyTrees = fc?.num("daily_trees_cut")?.toLong() ?: 0L,
             trees = trees,
             nodes = treeNodes(member, "foraging"),
+            hotfLevel = fc?.num("hotf_level")?.toInt() ?: 0,
         )
     }
 

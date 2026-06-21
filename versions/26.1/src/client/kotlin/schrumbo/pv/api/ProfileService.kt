@@ -39,7 +39,13 @@ object ProfileService {
         val status = source.status(uuid)
         val guild = source.guild(uuid)
 
-        val (mappedProfiles, selectedIndex) = ProfileMapper.mapAll(profiles, uuid)
+        val playerData = runCatching { source.player(uuid) }.getOrNull()
+            ?.get("player")?.takeIf { it.isJsonObject }?.asJsonObject
+        // Commissions completed is account-wide and only lives in the player achievements payload.
+        val commissions = playerData?.get("achievements")?.takeIf { it.isJsonObject }?.asJsonObject
+            ?.get("skyblock_hard_working_miner")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0L
+
+        val (mappedProfiles, selectedIndex) = ProfileMapper.mapAll(profiles, uuid, commissions)
         if (mappedProfiles.isEmpty()) return ProfileState.Error("No Skyblock profile found")
         // Hypixel returns these fields as JSON null for players without a session/guild (e.g. never
         // joined, no guild) — getAsJsonObject(name) would raw-cast null → ClassCastException, so guard.
@@ -50,8 +56,6 @@ object ProfileService {
         val ownUuid = Minecraft.getInstance().user.profileId?.toString()?.replace("-", "")
         val isSelf = ownUuid != null && uuid.equals(ownUuid, ignoreCase = true)
 
-        val playerData = runCatching { source.player(uuid) }.getOrNull()
-            ?.get("player")?.takeIf { it.isJsonObject }?.asJsonObject
         val hypixelLevel = playerData?.get("networkExp")?.asDouble?.let { HypixelStats.networkLevel(it) }
 
         val gameProfile = MojangApi.fetchProfile(uuid)

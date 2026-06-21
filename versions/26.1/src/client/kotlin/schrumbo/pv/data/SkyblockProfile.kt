@@ -80,6 +80,12 @@ data class SkyblockProfile(
     val wardrobeSlot: Int,
     val armor: List<ItemStack>,
     val equipment: List<ItemStack>,
+    /** Mining tools (pickaxes/drills, chisels) found anywhere in the profile, for the Mining gear view. */
+    val miningTools: List<ItemStack>,
+    /** Best mining armor piece per slot (helmet, chestplate, leggings, boots) found anywhere. */
+    val miningArmor: List<ItemStack>,
+    /** Best mining equipment per slot (necklace, cloak, belt, gloves) found anywhere. */
+    val miningEquipment: List<ItemStack>,
     val magicalPower: Int,
     val selectedPower: String?,
     val bank: Long,
