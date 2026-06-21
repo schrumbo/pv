@@ -17,3 +17,9 @@ pv-secrets.properties
 
 # working scratchpad — resume checkpoint, not part of the repo
 left-off.md
+
+# local-only: removed from history, keep out of VCS
+CLAUDE.md
+TODO.md
+img.png
+docs/
