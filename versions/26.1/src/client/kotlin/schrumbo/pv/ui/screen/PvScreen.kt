@@ -1,5 +1,6 @@
 package schrumbo.pv.ui.screen
 
+import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphicsExtractor
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.client.input.CharacterEvent
@@ -21,6 +22,7 @@ import schrumbo.pv.ui.Page
 import schrumbo.pv.ui.Theme
 import schrumbo.pv.ui.component.ClickRegistry
 import schrumbo.pv.ui.component.Hover
+import schrumbo.pv.ui.component.HoverPreview
 import schrumbo.pv.ui.page.BestiaryPage
 import schrumbo.pv.ui.page.CollectionsPage
 import schrumbo.pv.ui.page.CombatPage
@@ -64,10 +66,12 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
 
     private var inputRect = intArrayOf(0, 0, 0, 0)
     private var skycryptRect = intArrayOf(0, 0, 0, 0)
+    private var errorRect = intArrayOf(0, 0, 0, 0)
+    private var errorCopiedAt = 0L
     private val profileChipRects = mutableListOf<Pair<IntArray, Int>>()
 
     private val tabRects = mutableListOf<Pair<IntArray, Page>>()
-    private val combatSubRects = mutableListOf<Pair<IntArray, CombatPage.Sub>>()
+    private val subRailRects = mutableListOf<Pair<IntArray, Int>>()
     private val SUB_RAIL_W = 20   // rail depth, mirrors the top strip depth (topH)
 
     // Independent scroll viewports, keyed by a stable id (a page may host several — e.g. the Mobs
@@ -114,6 +118,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         Hover.screenX = mouseX
         Hover.screenY = mouseY
         ClickRegistry.reset()
+        HoverPreview.reset()
         context.fill(0, 0, width, height, Theme.BACKDROP)
 
         // The panel is centered: left margin == right margin, top margin == bottom margin. The left
@@ -143,7 +148,12 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
 
         // Pages with sub-categories get a rail OUTSIDE the panel on the left (on the backdrop, like
         // the top tabs sit above the panel); the active chip merges rightward into the surface.
-        if (page == Page.COMBAT) subTabRail(context, px - SUB_RAIL_W, panelTop, mouseX, mouseY)
+        val subTabs = subTabs()
+        if (subTabs.isNotEmpty()) {
+            subTabRail(context, px - SUB_RAIL_W, panelTop, panelBottom - panelTop, subTabs, subActive().coerceIn(0, subTabs.size - 1), mouseX, mouseY)
+        } else {
+            subRailRects.clear()
+        }
 
         val pad = 12
         val contentX = px + pad
@@ -153,6 +163,18 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         contentRect = intArrayOf(contentX, contentY, contentW, contentH)
         activeScroll.clear()
         renderContent(context, contentX, contentY, contentW, contentH, mouseX, mouseY)
+
+        // Rich hover preview (e.g. a storage page's contents) floats on top of everything, by the cursor.
+        HoverPreview.content?.let { c ->
+            val pad = 4
+            val pw = c.width + pad * 2
+            val ph = c.height + pad * 2
+            val px = (HoverPreview.x + 12).let { if (it + pw > width) HoverPreview.x - pw - 4 else it }.coerceIn(2, (width - pw).coerceAtLeast(2))
+            val py = (HoverPreview.y + 12).let { if (it + ph > height) height - ph - 2 else it }.coerceIn(2, (height - ph).coerceAtLeast(2))
+            context.fill(px, py, px + pw, py + ph, Theme.SURFACE)
+            border(context, px, py, pw, ph, Theme.ACCENT)
+            c.render(context, px + pad, py + pad, -1, -1)
+        }
     }
 
     /** Bottom bar: floating profile chips on the left, player search + Open-in-SkyCrypt on the right. */
@@ -241,7 +263,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
             val iy = topY + (tabH - iconSize) / 2
             ItemRenderUtils.renderItem(ctx, icon(p.icon), x + padX, iy, iconSize / 16f)
             if (active) {
-                ctx.text(font, p.title, x + padX + iconSize + 3, topY + (tabH - font.lineHeight) / 2, Theme.TEXT, false)
+                ctx.text(font, p.title, x + padX + iconSize + 3, topY + (tabH - font.lineHeight) / 2 + 2, Theme.TEXT, false)
             } else if (hovered) {
                 ctx.setComponentTooltipForNextFrame(font, listOf(Component.literal(p.title)), Hover.screenX, Hover.screenY)
             }
@@ -260,7 +282,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
     ) {
         when (val s = state) {
             is ProfileState.Loading -> centered(ctx, "Loading…", Theme.TEXT_MUTED, x + width / 2, y + height / 2)
-            is ProfileState.Error -> centered(ctx, s.message, Theme.WARN, x + width / 2, y + height / 2)
+            is ProfileState.Error -> renderError(ctx, s.message, x, y, width, height)
             is ProfileState.Loaded -> when (page) {
                 Page.GENERAL -> renderGeneral(ctx, s, x, y, width, height, mouseX, mouseY)
                 Page.COMBAT -> renderCombat(ctx, s, x, y, width, height, mouseX, mouseY)
@@ -336,32 +358,67 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
      * rotated: the accent sits on the outer (left) edge, the active chip opens rightward into the
      * content surface (no right border). Icon-only; the label shows as a hover tooltip.
      */
-    private fun subTabRail(ctx: GuiGraphicsExtractor, railX: Int, topY: Int, mouseX: Int, mouseY: Int) {
-        combatSubRects.clear()
-        val iconSize = 14
-        val chipH = 24            // chip length along the rail (mirrors an icon-only top tab's width)
+    private fun subTabRail(
+        ctx: GuiGraphicsExtractor, railX: Int, topY: Int, availH: Int,
+        tabs: List<Pair<ItemStack, String>>, active: Int, mouseX: Int, mouseY: Int,
+    ) {
+        subRailRects.clear()
         val gap = 4
         val lead = 10             // lead-in from the corner (mirrors tabBar's startX = px + 10)
+        // Shrink the chips just enough that every tab stays on-screen (else lower categories vanish).
+        val chipH = ((availH - lead - (tabs.size - 1) * gap) / tabs.size).coerceIn(16, 24)
+        val iconSize = minOf(14, chipH - 4)
         val innerX = railX + SUB_RAIL_W   // the panel's left border edge; the rail merges here
         var cy = topY + lead
-        for (sub in CombatPage.Sub.entries) {
-            val active = sub == combatSub
+        for ((i, tab) in tabs.withIndex()) {
+            val (stack, label) = tab
+            val on = i == active
             val rect = intArrayOf(railX, cy, SUB_RAIL_W, chipH)
             val hovered = hit(rect, mouseX, mouseY)
             // Active opens rightward 1px into the surface; inactive is closed by the panel border.
-            val right = if (active) innerX + 1 else innerX
-            ctx.fill(railX, cy, right, cy + chipH, if (active) Theme.SURFACE else if (hovered) Theme.BORDER else Theme.SURFACE_ALT)
-            ctx.fill(railX, cy, railX + 1, cy + chipH, if (active) Theme.ACCENT else Theme.BORDER) // outer (left) accent
-            ctx.fill(railX, cy, innerX, cy + 1, Theme.BORDER)                                      // top side
-            ctx.fill(railX, cy + chipH - 1, innerX, cy + chipH, Theme.BORDER)                      // bottom side
+            val right = if (on) innerX + 1 else innerX
+            ctx.fill(railX, cy, right, cy + chipH, if (on) Theme.SURFACE else if (hovered) Theme.BORDER else Theme.SURFACE_ALT)
+            ctx.fill(railX, cy, railX + 1, cy + chipH, if (on) Theme.ACCENT else Theme.BORDER) // outer (left) accent
+            ctx.fill(railX, cy, innerX, cy + 1, Theme.BORDER)                                  // top side
+            ctx.fill(railX, cy + chipH - 1, innerX, cy + chipH, Theme.BORDER)                  // bottom side
 
             val ix = railX + (SUB_RAIL_W - iconSize) / 2
-            ItemRenderUtils.renderItem(ctx, icon(sub.icon), ix, cy + (chipH - iconSize) / 2, iconSize / 16f)
-            if (hovered && !active) {
-                ctx.setComponentTooltipForNextFrame(font, listOf(Component.literal(sub.label)), Hover.screenX, Hover.screenY)
+            ItemRenderUtils.renderItem(ctx, stack, ix, cy + (chipH - iconSize) / 2, iconSize / 16f)
+            if (hovered && !on) {
+                ctx.setComponentTooltipForNextFrame(font, listOf(Component.literal(label)), Hover.screenX, Hover.screenY)
             }
-            combatSubRects += rect to sub
+            subRailRects += rect to i
             cy += chipH + gap
+        }
+    }
+
+    /** Left sub-tab entries (icon + tooltip label) for the current page, or empty if it has none. */
+    private fun subTabs(): List<Pair<ItemStack, String>> {
+        val s = state as? ProfileState.Loaded ?: return emptyList()
+        return when (page) {
+            Page.COMBAT -> CombatPage.Sub.entries.map { icon(it.icon) to it.label }
+            Page.INVENTORY -> {
+                val p = s.profiles[profileIndex.coerceIn(0, s.profiles.size - 1)]
+                if (InventoryPage.isEmpty(p)) emptyList() else InventoryPage.subTabs(p)
+            }
+            Page.COLLECTIONS -> CollectionsPage.subTabs(s.profiles[profileIndex.coerceIn(0, s.profiles.size - 1)])
+            else -> emptyList()
+        }
+    }
+
+    private fun subActive(): Int = when (page) {
+        Page.COMBAT -> combatSub.ordinal
+        Page.INVENTORY -> inventoryTab
+        Page.COLLECTIONS -> collectionCategory
+        else -> 0
+    }
+
+    private fun selectSub(i: Int) {
+        when (page) {
+            Page.COMBAT -> { combatSub = CombatPage.Sub.entries[i]; resetScroll("COMBAT", "mobs_kills", "mobs_deaths", "crimson") }
+            Page.INVENTORY -> { inventoryTab = i; containerPage = 0; resetScroll("INVENTORY") }
+            Page.COLLECTIONS -> { collectionCategory = i; resetScroll("COLLECTIONS") }
+            else -> {}
         }
     }
 
@@ -453,19 +510,13 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
             renderScrolled(ctx, x, y, width, height, mouseX, mouseY) { w, _ -> InventoryPage.disabled(w) }
             return
         }
+        // The category rail is drawn as chrome on the left edge (see [subTabRail]); here only the body.
         val active = inventoryTab.coerceIn(0, InventoryPage.entryCount(p) - 1)
-
-        // Fixed rail (never scrolls); clicks resolve at scale 1 — renderScrolled sets that transform.
-        InventoryPage.rail(p, active) { inventoryTab = it; containerPage = 0; resetScroll("INVENTORY") }
-            .render(ctx, x, y, mouseX, mouseY)
-
-        val gx = x + InventoryPage.RAIL_W + 8
-        val gw = width - InventoryPage.RAIL_W - 8
-        val header = InventoryPage.gridHeader(p, active, gw)
-        header.render(ctx, gx, y, mouseX, mouseY)
+        val header = InventoryPage.gridHeader(p, active, width)
+        header.render(ctx, x, y, mouseX, mouseY)
 
         val gy = y + header.height + 8
-        renderScrolled(ctx, gx, gy, gw, height - header.height - 8, mouseX, mouseY) { w, _ ->
+        renderScrolled(ctx, x, gy, width, height - header.height - 8, mouseX, mouseY, centerY = InventoryPage.centersBody(p, active)) { w, _ ->
             InventoryPage.body(p, active, w, containerPage) { containerPage = it; resetScroll("INVENTORY") }
         }
     }
@@ -482,15 +533,11 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         }
         val active = collectionCategory.coerceIn(0, cats.size - 1)
 
+        // The category picker is the screen's left rail (chrome); here only the header + grid.
         val header = CollectionsPage.header(cats, width)
         header.render(ctx, x, y, mouseX, mouseY)
-        val bodyY = y + header.height + 8
-
-        CollectionsPage.rail(cats, active) { collectionCategory = it; resetScroll("COLLECTIONS") }
-            .render(ctx, x, bodyY, mouseX, mouseY)
-
-        val gx = x + CollectionsPage.RAIL_W + 8
-        renderScrolled(ctx, gx, bodyY, width - CollectionsPage.RAIL_W - 8, height - header.height - 8, mouseX, mouseY) { w, _ ->
+        val gy = y + header.height + 8
+        renderScrolled(ctx, x, gy, width, height - header.height - 8, mouseX, mouseY, "COLLECTIONS") { w, _ ->
             CollectionsPage.grid(cats[active], w)
         }
     }
@@ -512,7 +559,7 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
      */
     private fun renderScrolled(
         ctx: GuiGraphicsExtractor, x: Int, y: Int, availW: Int, availH: Int, mouseX: Int, mouseY: Int,
-        id: String = page.name,
+        id: String = page.name, centerY: Boolean = false,
         build: (Int, Int) -> schrumbo.pv.ui.component.Component,
     ) {
         val barGap = 6
@@ -522,8 +569,10 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         r.offset = r.offset.coerceIn(0, r.maxScroll)
         activeScroll += r
 
+        // When the content fits and centring is requested, place it in the middle of the viewport.
+        val topY = if (centerY && content.height < availH) y + (availH - content.height) / 2 else y - r.offset
         ctx.enableScissor(x, y, x + availW, y + availH)
-        content.render(ctx, x, y - r.offset, mouseX, mouseY)
+        content.render(ctx, x, topY, mouseX, mouseY)
         ctx.disableScissor()
 
         if (r.hasBar) {
@@ -547,6 +596,34 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
     private fun placeholder(ctx: GuiGraphicsExtractor, title: String, x: Int, y: Int, width: Int, height: Int) {
         val c = Placeholder.build(title)
         c.render(ctx, x + (width - c.width) / 2, y + (height - c.height) / 2, -1, -1)
+    }
+
+    /** Error in a word-wrapped box; right-clicking it copies the full message to the clipboard. */
+    private fun renderError(ctx: GuiGraphicsExtractor, message: String, x: Int, y: Int, width: Int, height: Int) {
+        val pad = 8
+        val maxW = (width - 60).coerceIn(120, 480)
+        val lines = font.split(Component.literal(message), maxW)
+        val lineH = font.lineHeight + 2
+        val title = "Failed to load profile"
+        val hint = if (System.currentTimeMillis() - errorCopiedAt < 1500) "Copied!" else "Right-click to copy"
+        val innerW = maxOf(maxW, font.width(title), font.width(hint))
+        val boxW = innerW + pad * 2
+        val boxH = pad * 2 + lineH + 4 + lines.size * lineH + 6 + lineH
+        val bx = x + (width - boxW) / 2
+        val by = (y + (height - boxH) / 2).coerceAtLeast(y)
+
+        ctx.fill(bx, by, bx + boxW, by + boxH, Theme.SURFACE_ALT)
+        border(ctx, bx, by, boxW, boxH, Theme.WARN)
+        var ty = by + pad
+        ctx.text(font, title, bx + pad, ty, Theme.WARN, false)
+        ty += lineH + 4
+        for (line in lines) {
+            ctx.text(font, line, bx + pad, ty, Theme.TEXT, false)
+            ty += lineH
+        }
+        ty += 6
+        ctx.text(font, hint, bx + pad, ty, Theme.TEXT_MUTED, false)
+        errorRect = intArrayOf(bx, by, boxW, boxH)
     }
 
     private fun entityFor(s: ProfileState.Loaded, index: Int): LivingEntity? {
@@ -589,6 +666,14 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         val mx = event.x().toInt()
         val my = event.y().toInt()
 
+        if (event.button() == 1) {
+            (state as? ProfileState.Error)?.takeIf { hit(errorRect, mx, my) }?.let {
+                Minecraft.getInstance().keyboardHandler.setClipboard(it.message)
+                errorCopiedAt = System.currentTimeMillis()
+                return true
+            }
+        }
+
         if (hit(inputRect, mx, my)) {
             inputFocused = true
             huntingFocused = false
@@ -617,10 +702,8 @@ class PvScreen(target: String) : Screen(Component.literal("Profile Viewer")) {
         for ((rect, p) in tabRects) {
             if (hit(rect, mx, my)) { page = p; return true }
         }
-        if (page == Page.COMBAT) {
-            for ((rect, sub) in combatSubRects) {
-                if (hit(rect, mx, my)) { combatSub = sub; resetScroll("COMBAT", "mobs_kills", "mobs_deaths", "crimson"); return true }
-            }
+        for ((rect, i) in subRailRects) {
+            if (hit(rect, mx, my)) { selectSub(i); return true }
         }
         // Scrollbar drag: grab the thumb (or jump the track) of any region under the cursor.
         for (r in activeScroll.asReversed()) {

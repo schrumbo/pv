@@ -38,6 +38,8 @@ class Text(
         const val NORMAL = 1f
         /** Secondary detail (counts, captions). */
         const val SMALL = 0.75f
+        /** Dense overlays like an item slot's stack-count corner. */
+        const val TINY = 0.7f
     }
 }
 
@@ -86,8 +88,16 @@ class Item(
             }
         }
         corner?.let {
-            val tx = x + size - font.width(it) - 1
-            ctx.text(font, it, tx, y + size - font.lineHeight + 1, 0xFFFFFFFF.toInt(), true)
+            // Drawn at a smaller font so big stack counts (e.g. "4m") don't overflow the slot.
+            val s = Text.TINY
+            val tx = x + size - font.width(it) * s - 1
+            val ty = y + size - font.lineHeight * s
+            val pose = ctx.pose()
+            pose.pushMatrix()
+            pose.translate(tx, ty)
+            pose.scale(s, s)
+            ctx.text(font, it, 0, 0, 0xFFFFFFFF.toInt(), true)
+            pose.popMatrix()
         }
         if (tooltip && mouseX in x until x + size && mouseY in y until y + size) {
             ctx.setTooltipForNextFrame(font, stack, Hover.screenX, Hover.screenY)

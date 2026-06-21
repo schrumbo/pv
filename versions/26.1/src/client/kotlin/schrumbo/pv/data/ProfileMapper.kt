@@ -10,7 +10,7 @@ object ProfileMapper {
     /** All profiles the player is a member of, plus the index of the selected one (or 0). */
     fun mapAll(profilesResponse: JsonObject, uuid: String): Pair<List<SkyblockProfile>, Int> {
         val profiles = profilesResponse.array("profiles") ?: return emptyList<SkyblockProfile>() to 0
-        val members = profiles.map { it.asJsonObject }.filter { it.obj("members")?.has(uuid) == true }
+        val members = profiles.filter { it.isJsonObject }.map { it.asJsonObject }.filter { it.obj("members")?.has(uuid) == true }
         if (members.isEmpty()) return emptyList<SkyblockProfile>() to 0
 
         val selected = members.indexOfFirst { it.bool("selected") }.coerceAtLeast(0)
@@ -44,6 +44,9 @@ object ProfileMapper {
             rift = rift(member),
             pets = pets(member),
             containers = containers(member),
+            backpacks = backpacks(member),
+            sacks = sacks(member),
+            wardrobeSlot = (member.obj("inventory")?.num("wardrobe_equipped_slot") ?: member.num("wardrobe_equipped_slot"))?.toInt() ?: -1,
             armor = armor(member),
             equipment = equipment(member),
             magicalPower = member.obj("accessory_bag_storage")?.num("highest_magical_power")?.toInt() ?: 0,
@@ -112,7 +115,7 @@ object ProfileMapper {
 
     /** Best run for [floor] in a catacombs-type object: combined score, its timestamp, fastest S+ time. */
     private fun floorRun(type: JsonObject?, floor: Int): FloorRun? {
-        val best = type?.obj("best_runs")?.array(floor.toString())?.firstOrNull()?.asJsonObject
+        val best = type?.obj("best_runs")?.array(floor.toString())?.firstOrNull()?.takeIf { it.isJsonObject }?.asJsonObject
         val sPlus = type?.obj("fastest_time_s_plus")?.num(floor.toString())?.toLong()
         if (best == null && sPlus == null) return null
         val score = best?.let {
@@ -227,7 +230,7 @@ object ProfileMapper {
         val mc = member.obj("mining_core")
         val glacite = member.obj("glacite_player_data")
         val crystals = mc?.obj("crystals")?.entrySet()?.map { (key, value) ->
-            CrystalState(prettify(key.removeSuffix("_crystal")), value.asJsonObject.str("state") ?: "NOT_FOUND")
+            CrystalState(prettify(key.removeSuffix("_crystal")), value.takeIf { it.isJsonObject }?.asJsonObject?.str("state") ?: "NOT_FOUND")
         } ?: emptyList()
         val corpses = glacite?.obj("corpses_looted")?.entrySet()
             ?.map { (key, value) -> prettify(key) to (value.asLong) } ?: emptyList()
@@ -306,7 +309,7 @@ object ProfileMapper {
         // spendable). Like SkyCrypt, count earned diamond/platinum from each contest's claimed medal.
         val earned = HashMap<String, Int>()
         jc?.obj("contests")?.entrySet()?.forEach { (key, value) ->
-            val o = value.asJsonObject
+            val o = value.takeIf { it.isJsonObject }?.asJsonObject ?: return@forEach
             val crop = key.substringAfterLast(':')
             val collected = o.num("collected")?.toLong() ?: 0L
             pbs[crop] = maxOf(pbs[crop] ?: 0L, collected)
@@ -337,7 +340,7 @@ object ProfileMapper {
             if (v.isJsonPrimitive && v.asJsonPrimitive.isNumber) stacks[k.uppercase()] = v.asInt
         }
         val owned = member.obj("shards")?.array("owned")
-        val shardsOwned = owned?.sumOf { it.asJsonObject.num("amount_owned")?.toLong() ?: 0L } ?: 0L
+        val shardsOwned = owned?.sumOf { it.takeIf { e -> e.isJsonObject }?.asJsonObject?.num("amount_owned")?.toLong() ?: 0L } ?: 0L
         return AttributesData(stacks, shardsOwned, owned?.size() ?: 0)
     }
 
@@ -369,7 +372,7 @@ object ProfileMapper {
             enigmaSouls = r?.obj("enigma")?.array("found_souls")?.size() ?: 0,
             galleryTrophies = r?.obj("gallery")?.array("secured_trophies")?.size() ?: 0,
             securedTrophies = r?.obj("gallery")?.array("secured_trophies")
-                ?.mapNotNull { it.asJsonObject }
+                ?.mapNotNull { it.takeIf { e -> e.isJsonObject }?.asJsonObject }
                 ?.mapNotNull { t -> t.str("type")?.let { it to (t.num("timestamp")?.toLong() ?: 0L) } }
                 ?.toMap() ?: emptyMap(),
             witherEyes = r?.obj("wither_cage")?.array("killed_eyes")?.size() ?: 0,
@@ -398,22 +401,22 @@ object ProfileMapper {
         // Inventory feeds the Loadout tab; Armor/Equipment are shown there too (no standalone tabs).
         add("Inventory", decode(inv.obj("inv_contents")))
         add("Ender Chest", decode(inv.obj("ender_chest_contents")))
-        add("Wardrobe", decode(inv.obj("wardrobe_contents")))
+        val wardrobe = wardrobeItems(member)
+        if (wardrobe.isNotEmpty()) out += NamedContainer("Wardrobe", wardrobe)
         val bag = inv.obj("bag_contents")
         add("Accessories", decode(bag?.obj("talisman_bag")))
         add("Potion Bag", decode(bag?.obj("potion_bag")))
         add("Fishing Bag", decode(bag?.obj("fishing_bag")))
         add("Quiver", decode(bag?.obj("quiver")))
+        // Candy + Carnival bags always show (even empty) — they're part of the Misc category.
+        val shared = member.obj("shared_inventory")
+        out += NamedContainer("Candy Bag", decode(shared?.obj("candy_inventory_contents")))
+        out += NamedContainer("Carnival Mask Bag", decode(shared?.obj("carnival_mask_inventory_contents")))
         add("Personal Vault", decode(inv.obj("personal_vault_contents")))
-        val backpacks = inv.obj("backpack_contents")?.entrySet()
-            ?.sortedBy { it.key.toIntOrNull() ?: 0 }
-            ?.flatMap { (_, v) -> if (v.isJsonObject) InventoryDecoder.decode(v.asJsonObject.str("data") ?: "") else emptyList() }
-            ?: emptyList()
-        add("Backpacks", backpacks)
 
         // Hunting box — owned shards as a chest-style grid of skulls, amount shown as the stack size.
         val box = member.obj("shards")?.array("owned")
-            ?.mapNotNull { it.asJsonObject }
+            ?.mapNotNull { it.takeIf { e -> e.isJsonObject }?.asJsonObject }
             ?.mapNotNull { o ->
                 val key = o.str("type")?.uppercase()?.removePrefix("SHARD_") ?: return@mapNotNull null
                 val amt = o.num("amount_owned")?.toInt() ?: 0
@@ -424,6 +427,61 @@ object ProfileMapper {
             ?: emptyList()
         add("Hunting Box", box)
         return out
+    }
+
+    /**
+     * Wardrobe sets from `loadout.armor`: a map of 1-based slot id → `{HELMET,CHESTPLATE,LEGGINGS,
+     * BOOTS}`, each a gzipped 1-item inventory. Flattened to 36 slots per page (4 rows × 9: all
+     * helmets, then chestplates, leggings, boots) so each column reads as one set.
+     */
+    private fun wardrobeItems(member: JsonObject): List<ItemStack> {
+        val armor = member.obj("loadout")?.obj("armor") ?: return emptyList()
+        val maxSlot = armor.entrySet().mapNotNull { it.key.toIntOrNull() }.maxOrNull() ?: return emptyList()
+        val pages = (maxSlot + 8) / 9
+        val out = mutableListOf<ItemStack>()
+        for (page in 0 until pages) {
+            val start = page * 9 + 1
+            for (piece in listOf("HELMET", "CHESTPLATE", "LEGGINGS", "BOOTS")) {
+                for (slotId in start until start + 9) {
+                    val data = armor.obj(slotId.toString())?.obj(piece)?.str("data")
+                    out += data?.let { InventoryDecoder.decode(it).firstOrNull() } ?: ItemStack.EMPTY
+                }
+            }
+        }
+        return out
+    }
+
+    /** `inventory.sacks_counts` (Skyblock item id → amount), keeping only positive counts. */
+    private fun sacks(member: JsonObject): Map<String, Long> {
+        val counts = member.obj("inventory")?.obj("sacks_counts") ?: return emptyMap()
+        val out = HashMap<String, Long>()
+        for ((k, v) in counts.entrySet()) {
+            if (v.isJsonPrimitive && v.asJsonPrimitive.isNumber && v.asLong > 0) out[k] = v.asLong
+        }
+        return out
+    }
+
+    /** Backpack type id → full slot count (the stored contents may be trimmed shorter than this). */
+    private val BACKPACK_SLOTS = mapOf(
+        "SMALL_BACKPACK" to 9, "MEDIUM_BACKPACK" to 18, "LARGE_BACKPACK" to 27,
+        "GREATER_BACKPACK" to 36, "JUMBO_BACKPACK" to 45,
+    )
+
+    /** Each owned backpack (even empty ones) with its icon and full slot count from its type. */
+    private fun backpacks(member: JsonObject): List<Backpack> {
+        val inv = member.obj("inventory") ?: return emptyList()
+        val contents = inv.obj("backpack_contents") ?: return emptyList()
+        val icons = inv.obj("backpack_icons")
+        return contents.entrySet().sortedBy { it.key.toIntOrNull() ?: 0 }.mapNotNull { (key, v) ->
+            if (!v.isJsonObject) return@mapNotNull null
+            val items = InventoryDecoder.decode(v.asJsonObject.str("data") ?: "")
+            val iconData = icons?.obj(key)?.str("data")
+            val icon = iconData?.let { InventoryDecoder.decodeIcon(it) }?.takeIf { !it.isEmpty }
+                ?: ItemStack(net.minecraft.world.item.Items.CHEST)
+            val slots = BACKPACK_SLOTS[iconData?.let { InventoryDecoder.iconId(it) }]
+                ?: ((items.size + 8) / 9 * 9).coerceAtLeast(9)
+            Backpack(icon, items, slots)
+        }
     }
 
     private fun pets(member: JsonObject): List<PetEntry> {

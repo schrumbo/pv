@@ -17,7 +17,7 @@ enum class Page(val title: String, val icon: String) {
     COMBAT("Combat", "diamond_sword"),
     CATACOMBS("Catacombs", "wither_skeleton_skull"),
     RIFT("Rift", "ender_eye"),
-    INVENTORY("Loadout", "shulker_box"),
+    INVENTORY("Loadout", "chest"),
     COLLECTIONS("Collections", "item_frame"),
     PETS("Pets", "bone");
 

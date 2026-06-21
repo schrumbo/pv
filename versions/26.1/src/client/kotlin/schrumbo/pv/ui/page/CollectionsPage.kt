@@ -21,10 +21,9 @@ import schrumbo.pv.ui.component.Tooltip
 import schrumbo.pv.ui.component.VAlign
 import schrumbo.pv.util.Format
 
-/** Collections page: a fixed left category rail and the selected category's collections, scrolling. */
+/** Collections page: the category picker is the screen's left rail; the selected category scrolls. */
 object CollectionsPage {
 
-    const val RAIL_W = 22
     private const val COL_GAP = 14
 
     fun categories(p: SkyblockProfile): List<CategoryProgress> = CollectionsRegistry.resolve(p.collections)
@@ -41,11 +40,9 @@ object CollectionsPage {
         )
     }
 
-    fun rail(cats: List<CategoryProgress>, active: Int, onCategory: (Int) -> Unit): Component =
-        Column(cats.mapIndexed { i, cat -> categoryRow(cat, i == active) { onCategory(i) } }, spacing = 1)
-
-    private fun categoryRow(cat: CategoryProgress, active: Boolean, onClick: () -> Unit): Component =
-        PageKit.bookmark(RAIL_W, icon(cat.def.icon), cat.def.name, active, onClick)
+    /** Left sub-tab entries (icon + label) for the category rail. */
+    fun subTabs(p: SkyblockProfile): List<Pair<ItemStack, String>> =
+        categories(p).map { cat -> icon(cat.def.icon) to cat.def.name }
 
     fun grid(cat: CategoryProgress, width: Int): Component {
         val cellW = (width - COL_GAP) / 2

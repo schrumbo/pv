@@ -11,6 +11,14 @@ object Format {
         else -> trim(value / 1_000_000_000.0) + "B"
     }
 
+    /** Floored short form (no decimals/comma): 999 → "999", 1_500 → "1k", 4_100_000 → "4m". Exact in tooltip. */
+    fun short(value: Long): String = when {
+        value < 1_000 -> value.toString()
+        value < 1_000_000 -> "${value / 1_000}k"
+        value < 1_000_000_000 -> "${value / 1_000_000}m"
+        else -> "${value / 1_000_000_000}b"
+    }
+
     private fun trim(v: Double): String {
         val s = "%.1f".format(v)
         return if (s.endsWith(".0")) s.dropLast(2) else s

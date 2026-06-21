@@ -27,6 +27,33 @@ object ClickRegistry {
 }
 
 /**
+ * Per-frame slot for a rich hover preview (e.g. a storage page's item grid). A [PreviewOnHover] writes
+ * the component + cursor position here while hovered; the screen draws it on top after the page so it
+ * floats above everything. Mirrors [ClickRegistry].
+ */
+object HoverPreview {
+    var content: Component? = null
+    var x = 0
+    var y = 0
+    fun reset() { content = null }
+}
+
+/** Renders [child]; while hovered, publishes [preview] (built lazily) to [HoverPreview] at the cursor. */
+class PreviewOnHover(private val child: Component, private val preview: () -> Component) : Component() {
+    override val width get() = child.width
+    override val height get() = child.height
+
+    override fun render(ctx: GuiGraphicsExtractor, x: Int, y: Int, mouseX: Int, mouseY: Int) {
+        child.render(ctx, x, y, mouseX, mouseY)
+        if (mouseX in x until x + width && mouseY in y until y + height) {
+            HoverPreview.content = preview()
+            HoverPreview.x = Hover.screenX
+            HoverPreview.y = Hover.screenY
+        }
+    }
+}
+
+/**
  * Wraps a [child] and registers its rect for click handling. On hover it draws a [hoverFill] wash
  * across its (padded) area *before* the child, so the child's text and PiP item icons composite on
  * top and stay fully visible. [pad] grows the hit/hover area.

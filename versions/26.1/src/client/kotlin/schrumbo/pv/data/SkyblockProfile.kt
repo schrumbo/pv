@@ -73,6 +73,11 @@ data class SkyblockProfile(
     val rift: RiftData,
     val pets: List<PetEntry>,
     val containers: List<NamedContainer>,
+    val backpacks: List<Backpack>,
+    /** Sack item id → total count the player has stored across their sacks. */
+    val sacks: Map<String, Long>,
+    /** Equipped wardrobe set (1-based global index across pages; -1 = none). */
+    val wardrobeSlot: Int,
     val armor: List<ItemStack>,
     val equipment: List<ItemStack>,
     val magicalPower: Int,

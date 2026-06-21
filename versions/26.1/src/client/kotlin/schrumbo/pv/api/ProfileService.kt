@@ -41,14 +41,17 @@ object ProfileService {
 
         val (mappedProfiles, selectedIndex) = ProfileMapper.mapAll(profiles, uuid)
         if (mappedProfiles.isEmpty()) return ProfileState.Error("No Skyblock profile found")
-        val session = status.getAsJsonObject("session")
-        val online = session?.get("online")?.asBoolean ?: false
-        val location = if (online) HypixelStats.islandName(session?.get("mode")?.asString) else null
-        val guildName = guild.getAsJsonObject("guild")?.get("name")?.asString
+        // Hypixel returns these fields as JSON null for players without a session/guild (e.g. never
+        // joined, no guild) — getAsJsonObject(name) would raw-cast null → ClassCastException, so guard.
+        val session = status.get("session")?.takeIf { it.isJsonObject }?.asJsonObject
+        val online = session?.get("online")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
+        val location = if (online) HypixelStats.islandName(session?.get("mode")?.takeIf { it.isJsonPrimitive }?.asString) else null
+        val guildName = guild.get("guild")?.takeIf { it.isJsonObject }?.asJsonObject?.get("name")?.asString
         val ownUuid = Minecraft.getInstance().user.profileId?.toString()?.replace("-", "")
         val isSelf = ownUuid != null && uuid.equals(ownUuid, ignoreCase = true)
 
-        val playerData = runCatching { source.player(uuid) }.getOrNull()?.getAsJsonObject("player")
+        val playerData = runCatching { source.player(uuid) }.getOrNull()
+            ?.get("player")?.takeIf { it.isJsonObject }?.asJsonObject
         val hypixelLevel = playerData?.get("networkExp")?.asDouble?.let { HypixelStats.networkLevel(it) }
 
         val gameProfile = MojangApi.fetchProfile(uuid)

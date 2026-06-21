@@ -41,13 +41,14 @@ object BestiaryPage {
         return SpaceBetween(width, Text(name, Theme.TEXT, scale = Text.SUBTITLE), stats)
     }
 
-    /** Horizontal island selector: every island as an icon, wrapping to fit [width]. */
+    /** Horizontal island selector: every island as an icon, wrapping and centred within [width]. */
     fun selector(islands: List<IslandProgress>, active: Int, width: Int, onIsland: (Int) -> Unit): Component {
         val cell = 20
         val gap = 3
         val perRow = ((width + gap) / (cell + gap)).coerceAtLeast(1)
         val chips = islands.mapIndexed { i, island -> islandChip(island, i == active) { onIsland(i) } }
-        return Column(chips.chunked(perRow).map { Row(it, spacing = gap) }, spacing = gap)
+        val col = Column(chips.chunked(perRow).map { Row(it, spacing = gap) }, spacing = gap, align = HAlign.CENTER)
+        return Frame(width, col.height, col, hAlign = HAlign.CENTER, vAlign = VAlign.TOP)
     }
 
     private fun islandChip(island: IslandProgress, active: Boolean, onClick: () -> Unit): Component {
